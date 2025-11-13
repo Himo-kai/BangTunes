@@ -308,6 +308,50 @@ Make sure the script is executable:
 chmod +x bang_tunes.py
 ```
 
+## Advanced / Debugging
+
+### Debug Mode
+
+Enable verbose debug logging for troubleshooting:
+
+```bash
+BANGTUNES_DEBUG=1 python bang_tunes.py download batch_001.csv
+```
+
+Debug mode provides:
+
+- Detailed yt-dlp failure information
+- Failed download summaries with URLs and reasons
+- Enhanced error messages for PanPipe integration
+- Verbose logging for API calls and file operations
+
+### YouTube Music API Debugging
+
+For debugging YouTube Music API issues, use the dedicated debug script:
+
+```bash
+python debug_ytm.py
+```
+
+This script helps troubleshoot:
+
+- YTMusic authentication issues
+- Search query problems
+- API response parsing errors
+- Rate limiting and connection issues
+
+### Download Archive
+
+BangTunes uses `download_archive.txt` to track downloaded videos and avoid re-downloading. If you need to reset this:
+
+```bash
+# Clear download history (will re-download everything)
+rm download_archive.txt
+
+# Or backup and restore
+cp download_archive.txt download_archive.backup
+```
+
 ## Future Enhancements
 
 - **Curses TUI**: Full-screen terminal interface with arrow-key navigation

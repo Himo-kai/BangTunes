@@ -164,8 +164,32 @@ def db_init() -> sqlite3.Connection:
 
 
 def get_db():
-    """Get database connection with context manager for consistent resource handling."""
-    return sqlite3.connect(DB)
+    """Get database connection with context manager for consistent resource handling.
+    
+    Automatically initializes schema if database doesn't exist.
+    """
+    db_exists = Path(DB).exists()
+    conn = sqlite3.connect(DB)
+    
+    # Initialize schema if this is a new database
+    if not db_exists:
+        cur = conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS tracks(
+            id INTEGER PRIMARY KEY,
+            youtube_id TEXT UNIQUE,
+            title TEXT,
+            artist TEXT,
+            album TEXT,
+            file_path TEXT,
+            added_on TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
+        conn.commit()
+    
+    return conn
 
 
 def db_has_yid(conn: sqlite3.Connection, yid: str) -> bool:
@@ -490,6 +514,9 @@ def run_ytdlp_audio(
         else:
             ytdlp_path = "yt-dlp"  # Last resort
     
+    # Use download archive to avoid re-downloading
+    archive_file = ROOT / "download_archive.txt"
+    
     cmd = [
         str(ytdlp_path),
         "--quiet",
@@ -501,6 +528,7 @@ def run_ytdlp_audio(
         "--audio-quality", "0",
         "--embed-metadata",
         "--add-metadata",
+        "--download-archive", str(archive_file),
         "--user-agent", get_random_user_agent(),
         "--sleep-interval", str(base_sleep),
         "--max-sleep-interval", str(max_sleep),
@@ -527,7 +555,7 @@ def run_ytdlp_audio(
 
 
 def download_batch(batch_path: Path, audio_format: str = "opus") -> None:
-    conn = db_init()
+    conn = get_db()
     items = read_batch_csv(batch_path)
     tag = batch_path.stem if batch_path.suffix == ".csv" else batch_path.name
     temp_dir = DL_ROOT / f"tmp_{tag}"
