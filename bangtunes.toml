@@ -1,0 +1,19 @@
+# Bang Tunes Configuration
+# Place this file at ~/.config/bangtunes.toml or ~/BangTunes/bangtunes.toml
+
+# Root directory for Bang Tunes (optional - auto-detected if not set)
+# root = "/sdcard/BangTunes"  # Example for Termux
+
+# Default audio format for downloads
+format = "mp3"
+
+# Default minimum score for fuzzy matching (0-100)
+min_score = 58
+
+# Default batch size (tracks per batch file)
+size = 50
+
+# Example settings for different use cases:
+# For high-quality archival: format = "flac", min_score = 70
+# For mobile/storage-conscious: format = "opus", min_score = 50
+# For broad discovery: min_score = 40, size = 60

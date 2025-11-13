@@ -1,0 +1,7 @@
+yt-dlp>=2023.12.30
+ytmusicapi>=1.7.0
+mutagen>=1.47.0
+rapidfuzz>=3.6.1
+rich>=13.7.0
+tomli>=2.0.1
+toml>=0.10.2
