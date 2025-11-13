@@ -1,6 +1,33 @@
 #!/usr/bin/env python3
-# Bang Tunes — Termux-first MVP
-# Seed -> Similar -> 50-track batches -> Audio download + DB + Metadata
+"""
+Bang Tunes - Music Discovery Tool
+
+Copyright (c) 2024 BangTunes Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Started this in my truck during downtime between jobs. 
+Turned into something actually useful for finding new music.
+Integrates with my terminal music player setup.
+"""
+# Bang Tunes — started on Termux, works everywhere now
+# Basic idea: seed tracks -> find similar -> batch download -> profit
 import argparse
 import csv
 import os
@@ -82,7 +109,7 @@ def load_config() -> dict:
 
 @contextmanager
 def graceful_sigint() -> Generator[Dict[str, bool], None, None]:
-    """Context manager for graceful SIGINT handling."""
+    """Handle Ctrl+C gracefully so we don't corrupt downloads"""
     stop = {"hit": False}
 
     def handler(signum: int, frame: Any) -> None:
@@ -171,7 +198,7 @@ def get_db():
     db_exists = Path(DB).exists()
     conn = sqlite3.connect(DB)
     
-    # Initialize schema if this is a new database
+    # Set up the database schema if it's a fresh install
     if not db_exists:
         cur = conn.cursor()
         cur.execute("""
@@ -185,6 +212,7 @@ def get_db():
             added_on TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        # These indexes help with the stats queries
         cur.execute("CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
         conn.commit()
@@ -369,8 +397,8 @@ def search_related(ytm: "YTMusic", title: str, artist: str) -> List[Dict[str, st
 def build_pool_from_seed(
     seed_rows: List[Dict[str, str]], cc_only: bool = False
 ) -> List[Dict[str, str]]:
-    ytm = YTMusic()  # public mode; OAuth later if needed
-    pool = []
+    ytm = YTMusic()  # using public mode for now, might add login later
+    pool = []  # collect all candidates here
     for row in seed_rows:
         base_key = " ".join(
             [row.get("title", ""), row.get("artist", ""), row.get("notes", "")]
@@ -387,9 +415,9 @@ def build_pool_from_seed(
             if isinstance(score, (int, float)) and score >= MIN_SCORE:
                 filtered_cands.append(c)
         pool.extend(filtered_cands)
-        time.sleep(0.5)
+        time.sleep(0.5)  # be nice to YouTube's servers
     pool.sort(key=lambda x: x["score"], reverse=True)
-    # global de-dupe
+    # remove duplicates from the pool
     seen, final = set(), []
     for c in pool:
         if c["videoId"] in seen:
@@ -822,6 +850,273 @@ def rescan_library(fix_issues: bool = False) -> None:
             console.print("[bold blue]🔧 Library cleanup completed[/bold blue]")
 
 
+def first_run_wizard() -> None:
+    """First-run setup - checks deps and gets you started"""
+    console.print("[bold green]Bang Tunes First-Run Setup Wizard[/bold green]")
+    console.print("[dim]Creating the perfect music discovery environment...[/dim]")
+    console.print()
+    
+    # Check system dependencies
+    console.print("[bold]1. Checking system dependencies...[/bold]")
+    
+    # Check Python
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if sys.version_info >= (3, 8):
+        console.print(f"   ✓ Python {python_version} (compatible)")
+    else:
+        console.print(f"   ✗ Python {python_version} (need 3.8+)")
+        console.print("[red]Please upgrade Python and try again[/red]")
+        return
+    
+    # Check ffmpeg
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        console.print("   ✓ ffmpeg (found)")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        console.print("   ⚠ ffmpeg (not found - audio conversion may fail)")
+        console.print("   [dim]Install: sudo apt install ffmpeg (Ubuntu) or brew install ffmpeg (macOS)[/dim]")
+    
+    # Check yt-dlp
+    try:
+        import yt_dlp
+        console.print("   ✓ yt-dlp (installed)")
+    except ImportError:
+        console.print("   ✗ yt-dlp (missing)")
+        console.print("[red]Run: pip install yt-dlp[/red]")
+        return
+    
+    console.print()
+    
+    # Create directories
+    console.print("[bold]2. Creating project structure...[/bold]")
+    for directory in ["batches", "downloads"]:
+        dir_path = ROOT / directory
+        dir_path.mkdir(exist_ok=True)
+        console.print(f"   ✓ {directory}/")
+    
+    console.print()
+    
+    # Create example seed if missing
+    console.print("[bold]3. Setting up music preferences...[/bold]")
+    seed_file = ROOT / "seed.csv"
+    if not seed_file.exists():
+        example_seeds = [
+            "title,artist,notes",
+            "Parasite Eve,Bring Me The Horizon,metalcore",
+            "Take Me Back To Eden,Sleep Token,progressive metal",
+            "Monster,Starset,electronic rock",
+            "Doomsday,Architects,metalcore",
+            "Just Pretend,Bad Omens,alternative metal"
+        ]
+        seed_file.write_text("\n".join(example_seeds) + "\n")
+        console.print("   ✓ Created example seed.csv with popular tracks")
+    else:
+        console.print("   ✓ seed.csv already exists")
+    
+    console.print()
+    
+    # Test YouTube Music API
+    console.print("[bold]4. Testing YouTube Music connection...[/bold]")
+    try:
+        ytmusic = YTMusic()
+        test_results = ytmusic.search("test", filter="songs", limit=1)
+        if test_results:
+            console.print("   ✓ YouTube Music API working")
+        else:
+            console.print("   ⚠ YouTube Music API connected but no results")
+    except Exception as e:
+        console.print(f"   ⚠ YouTube Music API issue: {e}")
+        console.print("   [dim]This may work anyway - try building a batch[/dim]")
+    
+    console.print()
+    
+    # Success message with next steps
+    console.print("[bold green]Setup Complete![/bold green]")
+    console.print()
+    console.print("[bold]Ready to discover music! Try these commands:[/bold]")
+    console.print("   [cyan]python bang_tunes.py build[/cyan]           # Build discovery batches")
+    console.print("   [cyan]python bang_tunes.py download mix_001.csv[/cyan]  # Download first batch")
+    console.print("   [cyan]python bang_tunes.py stats[/cyan]            # View library stats")
+    console.print("   [cyan]python bang_tunes.py quickplay[/cyan]        # Play music instantly")
+    console.print()
+    console.print("[dim]Edit seed.csv to customize your music taste, then run build again![/dim]")
+
+
+def show_library_stats() -> None:
+    """Show some stats about your music collection"""
+    console.print("[bold]Bang Tunes Library Statistics[/bold]")
+    console.print()
+    
+    with get_db() as conn:
+        cur = conn.cursor()
+        
+        # Basic counts
+        cur.execute("SELECT COUNT(*) FROM tracks")
+        total_tracks = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(DISTINCT artist) FROM tracks WHERE artist IS NOT NULL")
+        total_artists = cur.fetchone()[0]
+        
+        cur.execute("SELECT COUNT(*) FROM tracks WHERE file_path IS NOT NULL")
+        downloaded_tracks = cur.fetchone()[0]
+        
+        # File size calculation
+        total_size = 0
+        if DL_ROOT.exists():
+            for file_path in DL_ROOT.rglob("*.*"):
+                if file_path.is_file() and file_path.suffix.lower() in [".opus", ".mp3", ".flac", ".m4a"]:
+                    total_size += file_path.stat().st_size
+        
+        size_mb = total_size / (1024 * 1024)
+        
+        # Create stats table
+        from rich.table import Table
+        stats_table = Table(title="Library Overview", show_header=True)
+        stats_table.add_column("Metric", style="cyan")
+        stats_table.add_column("Value", style="green")
+        
+        stats_table.add_row("Total Tracks", str(total_tracks))
+        stats_table.add_row("Downloaded Tracks", str(downloaded_tracks))
+        stats_table.add_row("Unique Artists", str(total_artists))
+        stats_table.add_row("Disk Usage", f"{size_mb:.1f} MB")
+        
+        console.print(stats_table)
+        console.print()
+        
+        # Top artists
+        if total_tracks > 0:
+            cur.execute("""
+                SELECT artist, COUNT(*) as count 
+                FROM tracks 
+                WHERE artist IS NOT NULL 
+                GROUP BY artist 
+                ORDER BY count DESC 
+                LIMIT 10
+            """)
+            top_artists = cur.fetchall()
+            
+            if top_artists:
+                artists_table = Table(title="Top Artists", show_header=True)
+                artists_table.add_column("Artist", style="yellow")
+                artists_table.add_column("Tracks", style="green")
+                
+                for artist, count in top_artists:
+                    artists_table.add_row(artist, str(count))
+                
+                console.print(artists_table)
+                console.print()
+        
+        # Fun stats
+        cur.execute("SELECT title FROM tracks ORDER BY LENGTH(title) DESC LIMIT 1")
+        longest_title = cur.fetchone()
+        
+        if longest_title:
+            console.print(f"[bold]Longest Track Title:[/bold] {longest_title[0]}")
+            console.print()
+        
+        # Batch success rate
+        batch_files = list((ROOT / "batches").glob("*.csv")) if (ROOT / "batches").exists() else []
+        console.print(f"[bold]Discovery Batches:[/bold] {len(batch_files)} created")
+        
+        if total_tracks == 0:
+            console.print()
+            console.print("[dim]No tracks yet! Run 'python bang_tunes.py build' to start discovering music.[/dim]")
+
+
+def quick_play_mode() -> None:
+    """Quick and dirty music player - just plays stuff without setup"""
+    console.print("[bold]Quick Play Mode[/bold]")
+    console.print("[dim]Instant music playback without setup[/dim]")
+    console.print()
+    
+    # Find downloaded audio files
+    audio_files = []
+    if DL_ROOT.exists():
+        for file_path in DL_ROOT.rglob("*.*"):
+            if file_path.is_file() and file_path.suffix.lower() in [".opus", ".mp3", ".flac", ".m4a"]:
+                audio_files.append(file_path)
+    
+    if not audio_files:
+        console.print("[red]No audio files found![/red]")
+        console.print("[dim]Download some music first:[/dim]")
+        console.print("   [cyan]python bang_tunes.py build[/cyan]")
+        console.print("   [cyan]python bang_tunes.py download mix_001.csv[/cyan]")
+        return
+    
+    # Shuffle the playlist
+    import random
+    random.shuffle(audio_files)
+    
+    console.print(f"[green]Found {len(audio_files)} tracks![/green]")
+    console.print()
+    
+    # Check for ffplay
+    ffplay_available = False
+    try:
+        subprocess.run(["ffplay", "-version"], capture_output=True, check=True)
+        ffplay_available = True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    
+    # Check for termux media player
+    termux_available = False
+    try:
+        subprocess.run(["termux-media-player", "info"], capture_output=True, check=True)
+        termux_available = True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    
+    if not ffplay_available and not termux_available:
+        console.print("[red]No audio player found![/red]")
+        console.print("[dim]Install one of these:[/dim]")
+        console.print("   • ffplay (part of ffmpeg): sudo apt install ffmpeg")
+        console.print("   • termux-media-player (Termux): pkg install termux-api")
+        console.print()
+        console.print("[dim]Or use the full PanPipe player:[/dim]")
+        console.print("   [cyan]python bang_tunes.py setup-player && python bang_tunes.py play[/cyan]")
+        return
+    
+    # Play music
+    console.print("[bold green]Starting playback...[/bold green]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]")
+    console.print()
+    
+    try:
+        for i, audio_file in enumerate(audio_files[:10]):  # Play first 10 tracks
+            # Get track info from database
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT title, artist FROM tracks WHERE file_path = ?", (str(audio_file),))
+                track_info = cur.fetchone()
+            
+            if track_info:
+                title, artist = track_info
+                console.print(f"[bold]Now Playing ({i+1}/10):[/bold] {artist} - {title}")
+            else:
+                console.print(f"[bold]Now Playing ({i+1}/10):[/bold] {audio_file.name}")
+            
+            # Play the file
+            if ffplay_available:
+                # Use ffplay with minimal UI
+                subprocess.run([
+                    "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(audio_file)
+                ], check=False)
+            elif termux_available:
+                # Use termux media player
+                subprocess.run(["termux-media-player", "play", str(audio_file)], check=False)
+                # Wait for completion (termux doesn't block)
+                import time
+                time.sleep(30)  # Assume 30 second tracks for demo
+            
+            console.print()
+    
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Playback stopped by user[/yellow]")
+    
+    console.print("[dim]For a better music experience, try the full PanPipe player:[/dim]")
+    console.print("   [cyan]python bang_tunes.py setup-player && python bang_tunes.py play[/cyan]")
+
+
 # --- CLI ---
 def main() -> None:
     global MIN_SCORE, BATCH_SIZE
@@ -862,6 +1157,9 @@ def main() -> None:
 
     sub.add_parser("view", help="Show quick library summary")
     sub.add_parser("list-batches", help="Show available batch CSVs and sizes")
+    sub.add_parser("install", help="First-run setup wizard - creates directories, checks deps, tests API")
+    sub.add_parser("stats", help="Show library statistics and gallery of results")
+    sub.add_parser("quickplay", help="Instant music playback (ffplay/termux) - no setup required")
     
     r = sub.add_parser("rescan", help="Compare DB with disk and report mismatches")
     r.add_argument(
@@ -870,10 +1168,10 @@ def main() -> None:
     
     # Integrated Player Commands
     if PANPIPE_AVAILABLE:
-        sub.add_parser("play", help="Launch BangTunes intelligent music player")
-        sub.add_parser("setup-player", help="Setup integrated music player")
-        sub.add_parser("sync", help="Sync library with music player database")
-        sub.add_parser("player-status", help="Show music player integration status")
+        sub.add_parser("play", help="Launch full PanPipe player (TUI with smart shuffle, behavior tracking)")
+        sub.add_parser("setup-player", help="Setup integrated PanPipe music player")
+        sub.add_parser("sync", help="Sync library with PanPipe player database")
+        sub.add_parser("player-status", help="Show PanPipe player integration status")
 
     args = ap.parse_args()
 
@@ -939,7 +1237,46 @@ def main() -> None:
         if args.cmd == "player-status":
             integration.status()
             return
+    
+    # New Reddit-ready commands for instant gratification
+    if args.cmd == "install":
+        first_run_wizard()
+        return
+    
+    if args.cmd == "stats":
+        show_library_stats()
+        return
+    
+    if args.cmd == "quickplay":
+        quick_play_mode()
+        return
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]⚠️  Operation cancelled by user[/yellow]")
+        sys.exit(1)
+    except ImportError as e:
+        console.print(f"[red]❌ Missing dependency: {e}[/red]")
+        console.print("[cyan]💡 Run: ./setup.sh to install all dependencies[/cyan]")
+        sys.exit(1)
+    except FileNotFoundError as e:
+        console.print(f"[red]❌ File not found: {e}[/red]")
+        console.print("[cyan]💡 Make sure you're in the BangTunes directory[/cyan]")
+        sys.exit(1)
+    except PermissionError as e:
+        console.print(f"[red]❌ Permission denied: {e}[/red]")
+        console.print("[cyan]💡 Check file permissions or run with appropriate privileges[/cyan]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]❌ Unexpected error: {e}[/red]")
+        if DEBUG_MODE:
+            import traceback
+            console.print("[dim]Full traceback:[/dim]")
+            traceback.print_exc()
+        else:
+            console.print("[cyan]💡 Run with BANGTUNES_DEBUG=1 for detailed error info[/cyan]")
+        console.print("[cyan]🐛 If this persists, please report it as an issue[/cyan]")
+        sys.exit(1)

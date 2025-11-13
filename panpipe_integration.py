@@ -1,7 +1,29 @@
 #!/usr/bin/env python3
 """
-PanPipe Integration Module for BangTunes
-Provides seamless integration between BangTunes discovery/download and PanPipe playback
+PanPipe Integration for Bang Tunes
+
+Copyright (c) 2024 BangTunes Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Integration layer for PanPipe terminal music player.
+Basically bridges the gap between downloaded music and the player.
 """
 
 import os
@@ -16,7 +38,7 @@ from rich.console import Console
 console = Console()
 
 class PanPipeIntegration:
-    """Handles integration between BangTunes and PanPipe"""
+    """Connects BangTunes downloads with the PanPipe music player"""
     
     def __init__(self, bangtunes_root: Path, config: Optional[Dict] = None):
         self.bangtunes_root = bangtunes_root
@@ -40,12 +62,12 @@ class PanPipeIntegration:
         if configured_root:
             return Path(configured_root)
         
-        # Auto-detect common locations
+        # Try to find PanPipe in common locations
         candidates = [
-            Path("/home/himokai/Builds/PanPipe"),  # Current default
+            Path("/home/himokai/Builds/PanPipe"),  # my usual dev setup
             Path.home() / "Builds" / "PanPipe",
             Path.home() / "PanPipe",
-            Path("./PanPipe"),  # Relative to current directory
+            Path("./PanPipe"),  # maybe it's right here
         ]
         
         for candidate in candidates:

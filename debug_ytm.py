@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
-"""Debug script to test YouTube Music API functionality"""
+"""
+Debug script for YouTube Music API issues
+
+Copyright (c) 2024 BangTunes Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Quick script I threw together to debug YouTube Music API issues.
+Useful when the main script isn't finding tracks properly.
+"""
 
 import sys
 import os
@@ -9,18 +34,18 @@ from ytmusicapi import YTMusic
 from rapidfuzz import fuzz
 
 def test_ytm_connection():
-    """Test basic YouTube Music API connection and search"""
-    print("🔍 Testing YouTube Music API connection...")
+    """See if we can actually connect to YouTube Music"""
+    print("Testing YouTube Music API connection...")
     
     try:
         ytm = YTMusic()  # public mode
-        print("✅ YTMusic instance created successfully")
+        print("YTMusic instance created successfully")
         
         # Test with one of the seed tracks
         test_title = "Rain"
         test_artist = "Sleep Token"
         
-        print(f"\n🎵 Testing search for: '{test_title}' by '{test_artist}'")
+        print(f"\nTesting search for: '{test_title}' by '{test_artist}'")
         
         # Direct song search
         query = f"{test_title} {test_artist}".strip()
@@ -30,7 +55,7 @@ def test_ytm_connection():
         print(f"Found {len(results)} song results")
         
         if results:
-            print("\n📋 First 5 results:")
+            print("\nFirst 5 results:")
             for i, result in enumerate(results[:5]):
                 title = result.get("title", "N/A")
                 artists = result.get("artists", [])
