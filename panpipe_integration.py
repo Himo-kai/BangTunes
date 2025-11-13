@@ -18,19 +18,42 @@ console = Console()
 class PanPipeIntegration:
     """Handles integration between BangTunes and PanPipe"""
     
-    def __init__(self, bangtunes_root: Path):
+    def __init__(self, bangtunes_root: Path, config: Optional[Dict] = None):
         self.bangtunes_root = bangtunes_root
         self.downloads_dir = bangtunes_root / "downloads"
         self.bangtunes_db = bangtunes_root / "library.db"
         
-        # PanPipe paths
-        self.panpipe_root = Path("/home/himokai/Builds/PanPipe")
-        self.panpipe_config_dir = Path.home() / ".config" / "bangtunes"
+        # Load PanPipe configuration with sensible defaults
+        panpipe_config = (config or {}).get("panpipe", {})
+        
+        # PanPipe paths from config or auto-detect
+        self.panpipe_root = self._resolve_panpipe_root(panpipe_config.get("root"))
+        self.panpipe_config_dir = Path(panpipe_config.get("config_dir", Path.home() / ".config" / "bangtunes"))
         self.panpipe_config_file = self.panpipe_config_dir / "panpipe.toml"
         self.panpipe_db = self.panpipe_config_dir / "panpipe.db"
         
         # Ensure config directory exists
         self.panpipe_config_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _resolve_panpipe_root(self, configured_root: Optional[str]) -> Path:
+        """Resolve PanPipe root directory from config or auto-detect"""
+        if configured_root:
+            return Path(configured_root)
+        
+        # Auto-detect common locations
+        candidates = [
+            Path("/home/himokai/Builds/PanPipe"),  # Current default
+            Path.home() / "Builds" / "PanPipe",
+            Path.home() / "PanPipe",
+            Path("./PanPipe"),  # Relative to current directory
+        ]
+        
+        for candidate in candidates:
+            if candidate.exists() and (candidate / "Cargo.toml").exists():
+                return candidate
+        
+        # Fallback to configured default
+        return Path("/home/himokai/Builds/PanPipe")
     
     def setup_panpipe_config(self) -> None:
         """Create PanPipe configuration pointing to BangTunes downloads"""
@@ -153,6 +176,7 @@ class PanPipeIntegration:
         """Launch PanPipe player"""
         if not self.panpipe_root.exists():
             console.print(f"[red]❌ PanPipe not found at {self.panpipe_root}[/red]")
+            console.print("[yellow]💡 Please ensure PanPipe is cloned and available, or update the path in bangtunes.toml[/yellow]")
             return False
         
         # Ensure PanPipe is built
@@ -172,6 +196,10 @@ class PanPipeIntegration:
             if not binary_path.exists():
                 console.print("[red]❌ PanPipe binary not found. Building...[/red]")
                 if not self._build_panpipe():
+                    console.print("[red]💥 Failed to build PanPipe. Please check:[/red]")
+                    console.print("[yellow]   1. Rust is installed: https://rustup.rs/[/yellow]")
+                    console.print("[yellow]   2. PanPipe source is available at the configured path[/yellow]")
+                    console.print("[yellow]   3. Run 'cargo build --release' manually in PanPipe directory[/yellow]")
                     return False
                 binary_path = self.panpipe_root / "target" / "release" / "panpipe_interactive"
             
@@ -188,6 +216,15 @@ class PanPipeIntegration:
             
         except subprocess.CalledProcessError as e:
             console.print(f"[red]❌ Failed to launch PanPipe: {e}[/red]")
+            console.print("[yellow]💡 Try running the player manually:[/yellow]")
+            console.print(f"[dim]   cd {self.panpipe_root}[/dim]")
+            console.print(f"[dim]   PANPIPE_CONFIG={self.panpipe_config_file} ./target/release/panpipe_interactive[/dim]")
+            return False
+        except FileNotFoundError:
+            console.print("[red]❌ PanPipe binary not found after build attempt[/red]")
+            console.print("[yellow]💡 Please build PanPipe manually:[/yellow]")
+            console.print(f"[dim]   cd {self.panpipe_root}[/dim]")
+            console.print("[dim]   cargo build --release[/dim]")
             return False
         except KeyboardInterrupt:
             console.print("\n[yellow]🎵 PanPipe player closed[/yellow]")
@@ -227,7 +264,7 @@ class PanPipeIntegration:
                 console.print("[green]✅ PanPipe built successfully[/green]")
                 return True
             else:
-                console.print(f"[red]❌ PanPipe build failed:[/red]")
+                console.print("[red]❌ PanPipe build failed:[/red]")
                 console.print(f"[red]{result.stderr}[/red]")
                 return False
                 
@@ -303,6 +340,6 @@ class PanPipeIntegration:
             console.print("[red]❌ PanPipe binary not built[/red]")
 
 
-def create_integration(bangtunes_root: Path) -> PanPipeIntegration:
+def create_integration(bangtunes_root: Path, config: Optional[Dict] = None) -> PanPipeIntegration:
     """Factory function to create PanPipe integration"""
-    return PanPipeIntegration(bangtunes_root)
+    return PanPipeIntegration(bangtunes_root, config)

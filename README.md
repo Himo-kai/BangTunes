@@ -1,4 +1,4 @@
-# Bang Tunes — Termux MVP
+# Bang Tunes — Unified Music Discovery & Playback System
 
                                                     ╔──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╗
                                                     │                                                                                                                              │
@@ -16,16 +16,27 @@
                                                     │                                                                                                                              │
                                                     ╚──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╝
 
-A polished, extensible music discovery and download tool designed for Termux and Arch Linux. Bang Tunes uses a seed-based approach to discover similar music, organizes downloads with rich metadata, and maintains a persistent SQLite library.
+A complete music ecosystem combining intelligent discovery, high-quality downloads, and smart playback in one unified system. Bang Tunes uses seed-based discovery to find similar music, downloads with rich metadata, and features an integrated terminal music player with behavior tracking and smart shuffle.
 
 ## Features
+
+### Music Discovery & Download
 
 - **Persistent SQLite Library**: Dedupe by `youtube_id`, query by artist/album, track file paths
 - **Rich Visual Interface**: Styled messages + progress bars during downloads
 - **Metadata Enhancement**: YouTube Music API integration via `ytmusicapi`, file tagging with `mutagen`
-- **Clean Architecture**: Single-file MVP ready for modular expansion
 - **Batch Processing**: Seed→pool→50-track batches workflow, tracked in DB and resumable
 - **Audio Quality**: High-quality opus downloads with embedded thumbnails and metadata
+- **Anti-Bot Protection**: Smart user agent rotation and retry logic for reliable downloads
+
+### Integrated Music Player
+
+- **Intelligent Behavior Tracking**: Smart shuffle based on listening habits and skip patterns
+- **Terminal UI**: Modern ratatui-based interface with keyboard controls
+- **Metadata Management**: In-app editing with smart filename parsing
+- **Multi-Format Support**: MP3, FLAC, OGG, MP4/M4A, WAV playback
+- **Content Hashing**: xxhash64-based deduplication and move detection
+- **Unified Database**: Seamless sync between discovery and playback systems
 
 ## Architecture
 
@@ -59,15 +70,20 @@ mkdir -p ~/BangTunes/{batches,downloads}
 
 ### Arch Linux Setup
 
-```bash
 # Install system dependencies
+
+```bash
 sudo pacman -S python python-pip ffmpeg
+```
 
 # Install Python packages
+
 pip install -U "yt-dlp[default]" ytmusicapi mutagen rapidfuzz rich
 
 # Create project structure
+
 mkdir -p ~/BangTunes/{batches,downloads}
+
 ```
 
 ### Using Requirements File
@@ -124,6 +140,36 @@ Display a summary of your music collection:
 
 ```bash
 python bang_tunes.py view
+```
+
+### 5. Setup Integrated Music Player
+
+Setup the intelligent music player integration:
+
+```bash
+# One-time setup: configure player and sync library
+python bang_tunes.py setup-player
+```
+
+### 6. Play Your Music
+
+Launch the intelligent terminal music player:
+
+```bash
+# Start the music player with your library
+python bang_tunes.py play
+```
+
+### 7. Sync Library Changes
+
+Sync new downloads with the music player:
+
+```bash
+# After downloading new batches, sync with player
+python bang_tunes.py sync
+
+# Check integration status
+python bang_tunes.py player-status
 ```
 
 ## File Organization
@@ -184,6 +230,30 @@ python bang_tunes.py view
 ```
 
 Shows top artists by track count in a styled table.
+
+### Player Commands
+
+```bash
+# Setup integrated music player (one-time)
+python bang_tunes.py setup-player
+
+# Launch intelligent music player
+python bang_tunes.py play
+
+# Sync library with player database
+python bang_tunes.py sync
+
+# Show integration status
+python bang_tunes.py player-status
+```
+
+The integrated player features:
+
+- Smart shuffle based on listening habits
+- Skip learning and behavior tracking
+- Modern terminal UI with keyboard controls
+- Metadata editing capabilities
+- Multi-format audio support
 
 ## Advanced Features
 

@@ -49,6 +49,9 @@ except ImportError:
 
 # --- Configurable ROOT -------------------------------------------------------
 # Prefer ~/BangTunes if it exists, otherwise fall back to ~/Builds/BangTunes.
+
+# Debug mode support
+DEBUG_MODE = os.getenv("BANGTUNES_DEBUG", "false").lower() in ("true", "1", "yes")
 def detect_root() -> Path:
     home = Path.home()
     preferred = home / "BangTunes"
@@ -140,6 +143,7 @@ def print_banner() -> None:
 
 # --- DB layer ---
 def db_init() -> sqlite3.Connection:
+    """Initialize database with schema - returns connection for immediate use."""
     conn = sqlite3.connect(DB)
     cur = conn.cursor()
     cur.execute("""
@@ -157,6 +161,11 @@ def db_init() -> sqlite3.Connection:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
     conn.commit()
     return conn
+
+
+def get_db():
+    """Get database connection with context manager for consistent resource handling."""
+    return sqlite3.connect(DB)
 
 
 def db_has_yid(conn: sqlite3.Connection, yid: str) -> bool:
@@ -232,6 +241,8 @@ def fetch_ytm_details(ytm: "YTMusic", title: str, artist: str) -> Optional[Dict]
     try:
         hits = ytm.search(q, filter="songs")[:1]
         if not hits:
+            if DEBUG_MODE:
+                console.print(f"[yellow]DEBUG: No YTM hits for '{q}'[/yellow]")
             return None
         h = hits[0]
         info = {
@@ -259,7 +270,9 @@ def fetch_ytm_details(ytm: "YTMusic", title: str, artist: str) -> Optional[Dict]
                 except Exception:
                     info["cover_bytes"] = None
         return info
-    except Exception:
+    except Exception as e:
+        if DEBUG_MODE:
+            console.print(f"[yellow]DEBUG: YTM fetch error for '{q}': {e}[/yellow]")
         return None
 
 
@@ -290,7 +303,9 @@ def search_related(ytm: "YTMusic", title: str, artist: str) -> List[Dict[str, st
                     "videoId": vid,
                 }
             )
-    except Exception:
+    except Exception as e:
+        if DEBUG_MODE:
+            console.print(f"[yellow]DEBUG: YTM search error for '{q}': {e}[/yellow]")
         pass
 
     # artist top tracks as proxy for "related"
@@ -312,7 +327,9 @@ def search_related(ytm: "YTMusic", title: str, artist: str) -> List[Dict[str, st
                                 "videoId": vid,
                             }
                         )
-        except Exception:
+        except Exception as e:
+            if DEBUG_MODE:
+                console.print(f"[yellow]DEBUG: YTM artist search error: {e}[/yellow]")
             pass
 
     # de-dupe
@@ -479,14 +496,12 @@ def run_ytdlp_audio(
         "--no-warnings",
         "--force-ipv4",
         "--concurrent-fragments", "3",
-        "-f", "bestaudio/best",
         "--extract-audio",
         "--audio-format", audio_format,
         "--audio-quality", "0",
-        "--embed-thumbnail",
+        "--embed-metadata",
         "--add-metadata",
-        "--download-archive", str(ARCHIVE),
-        # Optimized retry and sleep settings
+        "--user-agent", get_random_user_agent(),
         "--sleep-interval", str(base_sleep),
         "--max-sleep-interval", str(max_sleep),
         "--retries", "8",
@@ -505,7 +520,9 @@ def run_ytdlp_audio(
         # pick newest matching file
         path = max(files, key=lambda p: p.stat().st_mtime)
         return path
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        if DEBUG_MODE:
+            console.print(f"[yellow]DEBUG: yt-dlp failed for {url}: {e}[/yellow]")
         return None
 
 
@@ -521,6 +538,7 @@ def download_batch(batch_path: Path, audio_format: str = "opus") -> None:
     console.print("[bold]Starting downloads…[/bold]")
     ytm = YTMusic()
     failures = 0
+    failed_tracks = []  # Track failed downloads for summary
 
     with (
         graceful_sigint() as flag,
@@ -551,6 +569,12 @@ def download_batch(batch_path: Path, audio_format: str = "opus") -> None:
             tmp = with_retries(run_ytdlp_audio, 3, 2, url, temp_dir, audio_format)
             if tmp is None or not tmp.exists():
                 failures += 1
+                failed_tracks.append({
+                    "title": row.get("title", "Unknown"),
+                    "artist": row.get("artist", "Unknown"),
+                    "url": url,
+                    "reason": "Download failed"
+                })
                 progress.advance(task)
                 # Random delay on failure to avoid predictable patterns (3-8 seconds)
                 failure_delay = random.uniform(3.0, 8.0)
@@ -603,16 +627,27 @@ def download_batch(batch_path: Path, audio_format: str = "opus") -> None:
     console.print(
         f"[bold green]Batch done[/bold green] — total in library: [cyan]{t}[/cyan] tracks, [cyan]{a}[/cyan] artists, [cyan]{al}[/cyan] albums. Failures: {failures}"
     )
+    
+    # Enhanced debug logging for failures
+    if failed_tracks and DEBUG_MODE:
+        console.print("\n[yellow]🔍 Debug: Failed Downloads Summary[/yellow]")
+        for i, track in enumerate(failed_tracks[:10], 1):  # Show first 10 failures
+            console.print(f"[dim]  {i}. {track['title']} by {track['artist']} - {track['reason']}[/dim]")
+            console.print(f"[dim]     URL: {track['url']}[/dim]")
+        if len(failed_tracks) > 10:
+            console.print(f"[dim]  ... and {len(failed_tracks) - 10} more failures[/dim]")
+        console.print("[dim]💡 Common causes: YouTube rate limiting, region blocks, or deleted videos[/dim]")
 
 
 # --- Library views ---
 def show_library() -> None:
-    conn = db_init()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT artist, COUNT(*) as n FROM tracks GROUP BY artist ORDER BY n DESC, artist ASC LIMIT 50;"
-    )
-    rows = cur.fetchall()
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT artist, COUNT(*) as n FROM tracks GROUP BY artist ORDER BY n DESC, artist ASC LIMIT 50;"
+        )
+        rows = cur.fetchall()
+        
     table = Table(title="Bang Tunes — Top Artists")
     table.add_column("Artist", style="magenta", overflow="fold")
     table.add_column("# Tracks", style="cyan", justify="right")
@@ -641,39 +676,113 @@ def list_batches() -> None:
     console.print(table)
 
 
-def rescan_library() -> None:
-    """Compare DB with disk and report mismatches."""
-    conn = db_init()
-    cur = conn.cursor()
-    cur.execute("SELECT youtube_id, file_path FROM tracks;")
-    rows = cur.fetchall()
+def rescan_library(fix_issues: bool = False) -> None:
+    """Compare DB with disk and report mismatches. Optionally fix orphan files."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT youtube_id, file_path, title, artist FROM tracks;")
+        db_rows = cur.fetchall()
 
-    missing = []
-    for yid, fpath in rows:
-        if not fpath or not Path(fpath).exists():
-            missing.append((yid, fpath))
+        # Check for missing files referenced in DB
+        missing = []
+        for yid, fpath, title, artist in db_rows:
+            if not fpath or not Path(fpath).exists():
+                missing.append((yid, fpath, title, artist))
 
-    # Find files on disk
-    on_disk = []
-    if DL_ROOT.exists():
-        for p in DL_ROOT.rglob("*.*"):
-            if p.is_file() and p.suffix.lower() in [".opus", ".mp3", ".flac", ".m4a"]:
-                on_disk.append(p)
+        # Find all audio files on disk
+        on_disk = []
+        db_file_paths = {row[1] for row in db_rows if row[1]}  # Set of known file paths
+        
+        if DL_ROOT.exists():
+            for p in DL_ROOT.rglob("*.*"):
+                if p.is_file() and p.suffix.lower() in [".opus", ".mp3", ".flac", ".m4a"]:
+                    on_disk.append(p)
 
-    console.print(
-        f"[bold]Rescan[/bold]: {len(rows)} DB rows, {len(on_disk)} files on disk."
-    )
+        # Find orphan files (on disk but not in DB)
+        orphans = []
+        for file_path in on_disk:
+            if str(file_path) not in db_file_paths:
+                orphans.append(file_path)
 
-    if missing:
+        # Report findings
         console.print(
-            f"[yellow]Missing files referenced in DB ({len(missing)}):[/yellow]"
+            f"[bold]Rescan Results[/bold]: {len(db_rows)} DB entries, {len(on_disk)} files on disk, {len(orphans)} orphans"
         )
-        for yid, fpath in missing[:20]:
-            console.print(f" - {yid}  {fpath}")
-        if len(missing) > 20:
-            console.print(f" ... and {len(missing) - 20} more")
-    else:
-        console.print("[green]All DB entries have valid file paths.[/green]")
+
+        # Report missing files
+        if missing:
+            console.print(
+                f"[yellow]⚠️  Missing files referenced in DB ({len(missing)}):[/yellow]"
+            )
+            for yid, fpath, title, artist in missing[:10]:
+                console.print(f" - {title} by {artist} ({yid})")
+                if DEBUG_MODE:
+                    console.print(f"   Path: {fpath}")
+            if len(missing) > 10:
+                console.print(f" ... and {len(missing) - 10} more")
+            
+            if fix_issues:
+                # Confirmation prompt for missing DB entries
+                console.print(f"[yellow]⚠️  About to remove {len(missing)} missing entries from database[/yellow]")
+                try:
+                    confirm = input("Continue? [y/N]: ").strip().lower()
+                    if confirm not in ['y', 'yes']:
+                        console.print("[dim]Skipped removing missing DB entries[/dim]")
+                    else:
+                        console.print("[red]🔧 Removing missing file entries from DB...[/red]")
+                        missing_ids = [row[0] for row in missing]
+                        placeholders = ','.join('?' * len(missing_ids))
+                        cur.execute(f"DELETE FROM tracks WHERE youtube_id IN ({placeholders})", missing_ids)
+                        conn.commit()
+                        console.print(f"[green]✅ Removed {len(missing)} missing entries[/green]")
+                except (KeyboardInterrupt, EOFError):
+                    console.print("\n[dim]Operation cancelled[/dim]")
+        else:
+            console.print("[green]✅ All DB entries have valid file paths[/green]")
+
+        # Report orphan files
+        if orphans:
+            console.print(
+                f"[cyan]📁 Orphan files found ({len(orphans)}) - on disk but not in DB:[/cyan]"
+            )
+            for orphan in orphans[:10]:
+                rel_path = orphan.relative_to(DL_ROOT) if orphan.is_relative_to(DL_ROOT) else orphan
+                console.print(f" - {rel_path}")
+            if len(orphans) > 10:
+                console.print(f" ... and {len(orphans) - 10} more")
+            
+            if not fix_issues:
+                console.print("[dim]💡 Use --fix to attempt automatic cleanup of orphan files[/dim]")
+            else:
+                # Confirmation prompt for orphan file cleanup
+                console.print(f"[yellow]⚠️  About to delete {len(orphans)} orphan files from disk[/yellow]")
+                try:
+                    confirm = input("Continue? [y/N]: ").strip().lower()
+                    if confirm not in ['y', 'yes']:
+                        console.print("[dim]Skipped orphan file cleanup[/dim]")
+                    else:
+                        console.print("[yellow]🔧 Cleaning up orphan files...[/yellow]")
+                        removed_count = 0
+                        for orphan in orphans:
+                            try:
+                                orphan.unlink()
+                                removed_count += 1
+                                if DEBUG_MODE:
+                                    console.print(f"[dim]   Removed: {orphan}[/dim]")
+                            except Exception as e:
+                                if DEBUG_MODE:
+                                    console.print(f"[red]   Failed to remove {orphan}: {e}[/red]")
+                        console.print(f"[green]✅ Removed {removed_count} orphan files[/green]")
+                except (KeyboardInterrupt, EOFError):
+                    console.print("\n[dim]Operation cancelled[/dim]")
+        else:
+            console.print("[green]✅ No orphan files found[/green]")
+
+        # Summary
+        if not missing and not orphans:
+            console.print("[bold green]🎉 Library is perfectly synchronized![/bold green]")
+        elif fix_issues:
+            console.print("[bold blue]🔧 Library cleanup completed[/bold blue]")
 
 
 # --- CLI ---
@@ -686,7 +795,7 @@ def main() -> None:
     db_init()
 
     ap = argparse.ArgumentParser(
-        prog="Bang Tunes", description="Seed → Similar → Batches → Library (Termux)"
+        prog="Bang Tunes", description="Unified Music Discovery & Playback System (Termux/Linux)"
     )
     ap.add_argument("--no-banner", action="store_true", help="Hide ASCII banner")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -716,14 +825,18 @@ def main() -> None:
 
     sub.add_parser("view", help="Show quick library summary")
     sub.add_parser("list-batches", help="Show available batch CSVs and sizes")
-    sub.add_parser("rescan", help="Compare DB with disk and report mismatches")
     
-    # PanPipe integration commands
+    r = sub.add_parser("rescan", help="Compare DB with disk and report mismatches")
+    r.add_argument(
+        "--fix", action="store_true", help="Automatically fix orphan files and missing entries"
+    )
+    
+    # Integrated Player Commands
     if PANPIPE_AVAILABLE:
-        sub.add_parser("play", help="Launch PanPipe music player")
-        sub.add_parser("setup-player", help="Setup PanPipe integration")
-        sub.add_parser("sync", help="Sync library with PanPipe player")
-        sub.add_parser("player-status", help="Show PanPipe integration status")
+        sub.add_parser("play", help="Launch BangTunes intelligent music player")
+        sub.add_parser("setup-player", help="Setup integrated music player")
+        sub.add_parser("sync", help="Sync library with music player database")
+        sub.add_parser("player-status", help="Show music player integration status")
 
     args = ap.parse_args()
 
@@ -761,12 +874,13 @@ def main() -> None:
         return
 
     if args.cmd == "rescan":
-        rescan_library()
+        rescan_library(fix_issues=getattr(args, "fix", False))
         return
     
     # PanPipe integration commands
     if PANPIPE_AVAILABLE:
-        integration = create_integration(ROOT)
+        config = load_config()
+        integration = create_integration(ROOT, config)
         
         if args.cmd == "play":
             integration.launch_player()

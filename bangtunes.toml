@@ -17,3 +17,10 @@ size = 50
 # For high-quality archival: format = "flac", min_score = 70
 # For mobile/storage-conscious: format = "opus", min_score = 50
 # For broad discovery: min_score = 40, size = 60
+
+# PanPipe Integration Settings
+[panpipe]
+# Path to PanPipe project (auto-detected if not set)
+root = "/home/himokai/Builds/PanPipe"
+# Configuration directory for PanPipe integration
+config_dir = "/home/himokai/.config/bangtunes"
