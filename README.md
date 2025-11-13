@@ -47,7 +47,26 @@ A complete music ecosystem combining intelligent discovery, high-quality downloa
 - **yt-dlp**: Reliable audio extraction and conversion
 - **rapidfuzz**: Fuzzy matching for music discovery
 
+## Getting Started in 3 Commands
+
+Jump right in with the essential workflow:
+
+```bash
+# 1. Generate discovery batches from your music taste
+python bang_tunes.py build
+
+# 2. Download your first batch of music
+python bang_tunes.py download batches/mix_001.csv
+
+# 3. Set up and launch the intelligent music player
+python bang_tunes.py setup-player && python bang_tunes.py play
+```
+
+That's it! You now have a complete music discovery and playback ecosystem.
+
 ## Installation
+
+Bang Tunes requires Python 3.8+ and works best on Linux/Termux environments.
 
 ### Termux Setup
 

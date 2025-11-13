@@ -732,10 +732,19 @@ def rescan_library(fix_issues: bool = False) -> None:
             if str(file_path) not in db_file_paths:
                 orphans.append(file_path)
 
-        # Report findings
-        console.print(
-            f"[bold]Rescan Results[/bold]: {len(db_rows)} DB entries, {len(on_disk)} files on disk, {len(orphans)} orphans"
-        )
+        # Calculate file_path breakdown
+        entries_with_files = sum(1 for _, fpath, _, _ in db_rows if fpath)
+        entries_metadata_only = len(db_rows) - entries_with_files
+        
+        # Report findings with clear breakdown
+        if entries_metadata_only > 0:
+            console.print(
+                f"[bold]Rescan Results[/bold]: {len(db_rows)} DB entries ({entries_with_files} with files, {entries_metadata_only} metadata-only), {len(on_disk)} files on disk, {len(orphans)} orphans"
+            )
+        else:
+            console.print(
+                f"[bold]Rescan Results[/bold]: {len(db_rows)} DB entries, {len(on_disk)} files on disk, {len(orphans)} orphans"
+            )
 
         # Report missing files
         if missing:
