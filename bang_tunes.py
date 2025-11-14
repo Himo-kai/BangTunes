@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bang Tunes - Music Discovery Tool
+Bang Tunes - Music Tool
 
 Copyright (c) 2024 BangTunes Contributors
 
@@ -26,8 +26,7 @@ Started this in my truck during downtime between jobs.
 Turned into something actually useful for finding new music.
 Integrates with my terminal music player setup.
 """
-# Bang Tunes — CLI music discovery & playback
-# Basic idea: seed tracks -> find similar -> batch download -> profit
+# Basic idea: seed tracks -> find similar -> batch download
 
 from typing import Dict, List, Optional, Callable, Any, Generator
 from dataclasses import dataclass
@@ -103,7 +102,7 @@ except ImportError:
 DEBUG_MODE = os.getenv("BANGTUNES_DEBUG", "false").lower() in ("true", "1", "yes")
 def detect_root() -> Path:
     """Figure out where BangTunes lives - handles various install scenarios"""
-    # Most people will run this from the project directory
+    # Most people will run this from the project directory if they are sane.
     cwd = Path.cwd()
     if (cwd / "bang_tunes.py").exists():
         return cwd
@@ -212,9 +211,9 @@ def print_banner() -> None:
 
 # --- DB layer ---
 def db_init() -> sqlite3.Connection:
-    """Set up the database - now with better error handling and performance tweaks"""
+    """Set up the database."""
     try:
-        # Make sure the directory exists first (learned this the hard way)
+        # Make sure the directory exists first(learnd this the hard way)
         DB.parent.mkdir(parents=True, exist_ok=True)
         
         conn = sqlite3.connect(DB)
@@ -250,14 +249,14 @@ def db_init() -> sqlite3.Connection:
 
 
 def get_db():
-    """Get database connection with context manager for consistent resource handling.
+    """Get db connection with context manager for consistent resource handling.
     
-    Automatically initializes schema if database doesn't exist.
+    Automatically initializes schema if db doesn't exist.
     """
     db_exists = Path(DB).exists()
     conn = sqlite3.connect(DB)
     
-    # Set up the database schema if it's a fresh install
+    # Set up the db schema if it's a fresh install
     if not db_exists:
         cur = conn.cursor()
         cur.execute("""
@@ -488,7 +487,7 @@ def build_pool_from_seed(
 
 # --- Batch I/O ---
 def read_seed() -> List[Dict[str, str]]:
-    """Load up the seed tracks - with better error messages this time"""
+    """Load up the seed tracks - with error messages this time"""
     if not SEED.exists():
         console.print(f"[red]Missing seed file[/red]: {SEED}")
         console.print("[dim]Create a CSV file with headers: title,artist,notes[/dim]")
@@ -1207,7 +1206,7 @@ def quick_play_mode() -> None:
     if not ffplay_available and not termux_available:
         console.print("[red]No audio player found![/red]")
         console.print("[dim]Install one of these:[/dim]")
-        console.print("   • ffplay (part of ffmpeg): sudo apt install ffmpeg")
+        console.print("   • ffplay (part of ffmpeg): sudo pacman -S install ffmpeg")
         console.print("   • termux-media-player (Termux): pkg install termux-api")
         console.print()
         console.print("[dim]Or use the full BangTunes player:[/dim]")
