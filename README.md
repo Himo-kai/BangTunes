@@ -52,7 +52,7 @@ Bang Tunes helps you discover new music based on tracks you already love. Starte
 
 ## Architecture
 
-BangTunes is designed as a **standalone tool** with optional advanced features:
+BangTunes is designed as a **standalone tool** with optional extra features:
 
 ### Core Dependencies (Required)
 
@@ -67,7 +67,7 @@ BangTunes is designed as a **standalone tool** with optional advanced features:
 ### Playback Options
 
 - **Basic playback** (`quickplay`): Uses system audio players (ffplay, termux-media-player) - **no additional setup required**
-- **Advanced playback** (`play`): Integrated TUI player with smart shuffle and behavior tracking - **built-in, requires Rust for compilation**
+- **Full playback** (`play`): Integrated TUI player with smart shuffle and behavior tracking - **built-in, requires Rust for compilation**
 
 ## Getting Started in 4 Commands
 
@@ -379,7 +379,7 @@ The integrated player features:
 - Metadata editing capabilities
 - Multi-format audio support
 
-## Advanced Features
+## Extra Features
 
 ### Metadata Enhancement
 
@@ -388,7 +388,7 @@ The integrated player features:
 - Embeds metadata using mutagen (title, artist, album, year)
 - Supports both Vorbis comments (opus) and ID3 tags (mp3)
 
-**Note**: Current metadata detection uses intentionally simple placeholder logic for rapid discovery. Advanced AI-powered metadata suggestions using local ML models are planned for future releases to enhance artist/album detection accuracy.
+**Note**: Current metadata detection uses placeholder logic for fast discovery. Better metadata detection is planned for future releases.
 
 ### Fuzzy Matching
 
@@ -434,7 +434,7 @@ Make sure the script is executable:
 chmod +x bang_tunes.py
 ```
 
-## Advanced / Debugging
+## Debugging
 
 ### Debug Mode
 
@@ -448,7 +448,7 @@ Debug mode provides:
 
 - Detailed yt-dlp failure information
 - Failed download summaries with URLs and reasons
-- Enhanced error messages for player integration
+- Better error messages for player integration
 - Verbose logging for API calls and file operations
 
 ### YouTube Music API Debugging
@@ -480,10 +480,10 @@ cp download_archive.txt download_archive.backup
 
 ## Future Enhancements
 
-- **Cross-device sync (Termux ↔ Linux)**: Seamless library synchronization across platforms
-- **Metadata AI suggestions**: Enhanced artist/album detection using local ML models
-- **Smart Similarity**: Local embeddings for better music clustering and recommendations
-- **Discovery Report**: Rich batch analysis with genre clustering and similarity scores
+- **Cross-device sync (Termux ↔ Linux)**: Library synchronization across platforms
+- **Better metadata detection**: Improved artist/album recognition
+- **Better matching**: Improved similarity detection for music discovery
+- **Discovery Report**: Rich batch analysis with genre breakdown and match scores
 - **Audio Format Options**: Support for mp3, flac, and other high-quality formats
 
 ## Contributing
@@ -584,11 +584,11 @@ echo "Radiohead,Creep" >> test_seed.csv
 python bang_tunes.py build --seed test_seed.csv --limit 3
 
 # Test error handling
-python bang_tunes.py build --seed nonexistent.csv  # Should fail gracefully
-python bang_tunes.py quickplay  # Should handle no music gracefully
+python bang_tunes.py build --seed nonexistent.csv  # Fails like a majestic freakin eagle
+python bang_tunes.py quickplay  # Handles no music just as well as my above statement.
 
 # Test cross-platform paths
-python bang_tunes.py stats  # Should work on any OS
+python bang_tunes.py stats  # Works on any OS
 ```
 
 **Player Integration Testing:**
@@ -641,7 +641,7 @@ python bang_tunes.py player-status
 - New CLI commands or options
 - Additional metadata sources
 - Improved similarity algorithms
-- Enhanced player integration features
+- Better player integration features
 
 **📚 Documentation**
 
@@ -707,12 +707,12 @@ python bang_tunes.py player-status
 Thanks for contributing to BangTunes! Every improvement helps build a better music discovery experience for everyone.
 
 - **Curses TUI**: Full-screen terminal interface with arrow-key navigation
-- **Dedup Sweeper**: Advanced filesystem vs database reconciliation
+- **Dedup Sweeper**: Filesystem vs database reconciliation
 - **License Filtering**: Optional Creative Commons-only discovery mode
 
 ## Contributing
 
-This is a single-file MVP designed for easy modification and extension. The code is structured with clear separation between:
+This is a single-file designed for easy modification and extension. The code is structured with clear separation between:
 
 - Database operations (`db_*` functions)
 - Metadata handling (`embed_*`, `fetch_*` functions)
@@ -726,4 +726,4 @@ Open source - modify and distribute as needed.
 
 ---
 
-**Bang Tunes** — Because your music discovery shouldn't be drab and monotonous.
+**Bang Tunes** — Because Tunes Bang.

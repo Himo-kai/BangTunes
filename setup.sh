@@ -1,7 +1,7 @@
 #!/bin/bash
 # Bang Tunes Setup Script
-# Should work on most Unix-like systems (tested on Termux and Arch Linux)
-# Just run this and it should handle the rest
+# Works on Unix-like systems (limited testing) (tested on Termux and Arch Linux)
+# Run this and it handles the rest
 #
 # Copyright (c) 2024 BangTunes Contributors
 #
@@ -117,17 +117,17 @@ mkdir -p batches downloads
 # Build integrated player (if Rust is available)
 echo "Building integrated music player..."
 if command -v cargo &> /dev/null; then
-    echo "Rust detected - building player for advanced features..."
+    echo "Rust detected - building player for extra features..."
     cargo build --release
     if [ $? -eq 0 ]; then
         echo "Player built successfully!"
     else
-        echo "Warning: Player build failed. Advanced player features will be unavailable."
+        echo "Warning: Player build failed. Extra player features will be unavailable."
         echo "Basic playback via 'quickplay' command will still work."
     fi
 else
     echo "Rust not found - skipping player build."
-    echo "Install Rust from https://rustup.rs/ for advanced player features."
+    echo "Install Rust from https://rustup.rs/ for extra player features."
     echo "Basic playback via 'quickplay' command will still work."
 fi
 

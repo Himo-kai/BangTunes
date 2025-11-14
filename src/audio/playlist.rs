@@ -76,7 +76,7 @@ impl Playlist {
 
     /// Get tracks that exist and are accessible
     pub fn get_valid_tracks(&self, all_tracks: &[Track]) -> Vec<usize> {
-        // Create a map from file path to track index for efficient lookup
+        // Create a map from file path to track index for quick lookup
         let track_map: HashMap<&Path, usize> = all_tracks
             .iter()
             .enumerate()

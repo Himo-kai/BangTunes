@@ -69,7 +69,7 @@ impl AudioPlayer {
         let sink = Sink::try_new(&self.stream_handle)?;
         sink.set_volume(self.config.volume);
         
-        // Load and decode the audio file with robust error handling
+        // Load and decode the audio file with error handling
         let file = match File::open(&track.file_path) {
             Ok(f) => f,
             Err(e) => {

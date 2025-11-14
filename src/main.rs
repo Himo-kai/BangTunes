@@ -1,6 +1,6 @@
 // PanPipe - Terminal Music Player
 // Started as a simple player, grew into something with smart features
-// Now integrated into BangTunes for seamless music discovery -> playback
+// Now integrated into BangTunes for music discovery -> playback
 
 mod audio;
 mod behavior;

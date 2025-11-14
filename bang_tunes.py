@@ -821,7 +821,7 @@ def download_batch(batch_path: Path, audio_format: str = "opus") -> None:
         f"[bold green]Batch done[/bold green] — total in library: [cyan]{t}[/cyan] tracks, [cyan]{a}[/cyan] artists, [cyan]{al}[/cyan] albums. Failures: {failures}"
     )
     
-    # Enhanced debug logging for failures
+    # Extra debug info for failures
     if failed_tracks and DEBUG_MODE:
         console.print("\n[yellow]🔍 Debug: Failed Downloads Summary[/yellow]")
         for i, track in enumerate(failed_tracks[:10], 1):  # Show first 10 failures

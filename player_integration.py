@@ -58,7 +58,7 @@ class BangTunesPlayer:
         self.player_config_file = self.player_config_dir / "player.toml"
         self.player_db = self.player_config_dir / "player.db"
         
-        # Ensure config directory exists
+        # Make sure config dir. exists
         self.player_config_dir.mkdir(parents=True, exist_ok=True)
     
     def _resolve_player_root(self, configured_root: Optional[str]) -> Path:
@@ -207,11 +207,11 @@ class BangTunesPlayer:
         """Launch BangTunes player"""
         if not self.player_root.exists():
             console.print(f"[red]❌ Player not found at {self.player_root}[/red]")
-            console.print("[yellow]💡 Please ensure player source is available, or update the path in bangtunes.toml[/yellow]")
+            console.print("[yellow]💡 Please check that player source is available, or update the path in bangtunes.toml[/yellow]")
             return False
         
-        # Ensure player is built
-        if not self._ensure_player_built():
+        # Check if player is built
+        if not self._check_player_built():
             return False
         
         # Set environment variable for config
@@ -261,8 +261,8 @@ class BangTunesPlayer:
             console.print("\n[yellow]🎵 BangTunes player closed[/yellow]")
             return True
     
-    def _ensure_player_built(self) -> bool:
-        """Ensure player is built and ready"""
+    def _check_player_built(self) -> bool:
+        """Check if player is built and ready"""
         cargo_toml = self.player_root / "Cargo.toml"
         if not cargo_toml.exists():
             console.print(f"[red]❌ Player Cargo.toml not found at {cargo_toml}[/red]")

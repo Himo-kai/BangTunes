@@ -1350,7 +1350,7 @@ impl InteractiveApp {
         // Test results: "the ouytside" vs "The Outside" works in reverse order (Some(290))
         // but returns None in forward order. Always use fuzzy_match(search_query, track_field)!
         
-        // Comprehensive fuzzy matcher testing
+        // Fuzzy matcher testing
         let test_cases = [
             ("the outside", "the outside"),     // Exact match
             ("the outside", "the ouytside"),    // Original typo
