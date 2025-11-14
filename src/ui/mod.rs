@@ -1,5 +1,5 @@
-// Terminal UI - the face of PanPipe
-// Built with ratatui for a modern, responsive terminal interface
+// Terminal UI - the face of BangTunes
+// Built with ratatui because ncurses is a pain and this actually works
 
 mod app;        // main application state and event loop
 mod components; // reusable UI widgets

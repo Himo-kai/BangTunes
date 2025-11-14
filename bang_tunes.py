@@ -86,12 +86,12 @@ except ImportError:
     print("Error: rich not installed. Run: pip install rich")
     sys.exit(1)
 
-# PanPipe Integration
+# BangTunes Player Integration
 try:
-    from panpipe_integration import create_integration
-    PANPIPE_AVAILABLE = True
+    from player_integration import create_integration
+    PLAYER_AVAILABLE = True
 except ImportError:
-    PANPIPE_AVAILABLE = False
+    PLAYER_AVAILABLE = False
 
 
 # --- Configurable ROOT -------------------------------------------------------
@@ -398,7 +398,7 @@ def normalize_artists(artists: Optional[List[Dict]]) -> str:
 def search_related(ytm: "YTMusic", title: str, artist: str) -> List[Dict[str, str]]:
     out = []
 
-    # direct song search
+    # try the obvious approach first
     q = f"{title} {artist}".strip() if (title or artist) else title
     try:
         for r in ytm.search(q, filter="songs")[:40]:
@@ -417,7 +417,7 @@ def search_related(ytm: "YTMusic", title: str, artist: str) -> List[Dict[str, st
             console.print(f"[yellow]DEBUG: YTM search error for '{q}': {e}[/yellow]")
         pass
 
-    # artist top tracks as proxy for "related"
+    # if that doesn't work, try the artist's popular stuff
     if artist:
         try:
             a_hit = ytm.search(artist, filter="artists")[:1]
@@ -1208,7 +1208,7 @@ def quick_play_mode() -> None:
         console.print("   • ffplay (part of ffmpeg): sudo apt install ffmpeg")
         console.print("   • termux-media-player (Termux): pkg install termux-api")
         console.print()
-        console.print("[dim]Or use the full PanPipe player:[/dim]")
+        console.print("[dim]Or use the full BangTunes player:[/dim]")
         console.print("   [cyan]python bang_tunes.py setup-player && python bang_tunes.py play[/cyan]")
         return
     
@@ -1249,7 +1249,7 @@ def quick_play_mode() -> None:
     except KeyboardInterrupt:
         console.print("\n[yellow]Playback stopped by user[/yellow]")
     
-    console.print("[dim]For a better music experience, try the full PanPipe player:[/dim]")
+    console.print("[dim]For a better music experience, try the full BangTunes player:[/dim]")
     console.print("   [cyan]python bang_tunes.py setup-player && python bang_tunes.py play[/cyan]")
 
 
@@ -1303,11 +1303,11 @@ def main() -> None:
     )
     
     # Integrated Player Commands
-    if PANPIPE_AVAILABLE:
-        sub.add_parser("play", help="Launch full PanPipe player (TUI with smart shuffle, behavior tracking)")
-        sub.add_parser("setup-player", help="Setup integrated PanPipe music player")
-        sub.add_parser("sync", help="Sync library with PanPipe player database")
-        sub.add_parser("player-status", help="Show PanPipe player integration status")
+    if PLAYER_AVAILABLE:
+        sub.add_parser("play", help="Launch BangTunes intelligent music player (TUI with smart shuffle, behavior tracking)")
+        sub.add_parser("setup-player", help="Setup BangTunes player integration")
+        sub.add_parser("sync", help="Sync library with player database")
+        sub.add_parser("player-status", help="Show player integration status")
 
     args = ap.parse_args()
 
@@ -1348,8 +1348,8 @@ def main() -> None:
         rescan_library(fix_issues=getattr(args, "fix", False))
         return
     
-    # PanPipe integration commands
-    if PANPIPE_AVAILABLE:
+    # Player integration commands
+    if PLAYER_AVAILABLE:
         config = load_config()
         integration = create_integration(ROOT, config)
         
@@ -1358,10 +1358,10 @@ def main() -> None:
             return
         
         if args.cmd == "setup-player":
-            console.print("[bold]🎵 Setting up PanPipe integration...[/bold]")
-            integration.setup_panpipe_config()
+            console.print("[bold]🎵 Setting up player integration...[/bold]")
+            integration.setup_player_config()
             integration.sync_libraries()
-            console.print("[green]✅ PanPipe integration setup complete![/green]")
+            console.print("[green]✅ Player integration setup complete![/green]")
             console.print("[cyan]💡 Use 'python bang_tunes.py play' to launch the player[/cyan]")
             return
         

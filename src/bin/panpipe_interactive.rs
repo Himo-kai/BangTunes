@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
     let config = Config::load()?;
     
     // Print startup banner
-    println!("🎵 PanPipe - Terminal Music Player");
+    println!("🎵 BangTunes - Terminal Music Player");
     println!("===================================");
     println!("Loading your music library...");
     
@@ -167,7 +167,7 @@ async fn main() -> Result<()> {
     }
     
     println!("✅ Loaded {} tracks total", all_tracks.len());
-    println!("🚀 Starting PanPipe...\n");
+    println!("🚀 Starting BangTunes...\n");
     
     // Small delay to let user see the loading info
     sleep(Duration::from_millis(1500)).await;
@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
     // Run the interactive interface
     app.run().await?;
     
-    println!("\n👋 Thanks for using PanPipe!");
+    println!("\n👋 Thanks for using BangTunes!");
     Ok(())
 }
 
@@ -1813,7 +1813,7 @@ impl InteractiveApp {
         
         let header = Paragraph::new(Line::from(tab_titles))
             .style(Style::default().fg(Color::Cyan))
-            .block(Block::default().borders(Borders::ALL).title("🎵 PanPipe"));
+            .block(Block::default().borders(Borders::ALL).title("🎵 BangTunes"));
         f.render_widget(header, area);
     }
     
@@ -2131,10 +2131,25 @@ impl InteractiveApp {
         let settings_content = vec![
             Line::from(vec![Span::styled("⚙️ Settings", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
             Line::from(""),
+            Line::from(vec![Span::styled("⌨️ Keyboard Controls:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from("  Space         Toggle play/pause"),
+            Line::from("  p             Play current track"),
+            Line::from("  s             Stop playback"),
+            Line::from("  n / →         Next track"),
+            Line::from("  b / ←         Previous track"),
+            Line::from("  ↑ / ↓         Navigate track list"),
+            Line::from("  Enter         Select/play highlighted track"),
+            Line::from("  + / =         Volume up"),
+            Line::from("  -             Volume down"),
+            Line::from("  z             Toggle shuffle mode"),
+            Line::from("  r             Toggle repeat mode"),
+            Line::from("  F5            Refresh library"),
+            Line::from("  q / Esc       Quit player"),
+            Line::from(""),
             Line::from(vec![Span::styled("🎵 Audio Configuration:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  Volume: Controlled via +/- keys"),
             Line::from("  Repeat Mode: Controlled via 'r' key"),
-            Line::from("  Shuffle: Controlled via 's' key"),
+            Line::from("  Shuffle: Controlled via 'z' key"),
             Line::from(""),
             Line::from(vec![Span::styled("📁 Library Management:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  Music Directory: Scanned on startup"),
@@ -2419,7 +2434,7 @@ impl InteractiveApp {
         let popup_area = Self::centered_rect(80, 70, area);
         
         let help_text = vec![
-            Line::from(vec![Span::styled("🎵 PanPipe Help", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled("🎵 BangTunes Help", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
             Line::from(""),
             Line::from(vec![Span::styled("Navigation:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  ↑/↓           Navigate tracks (no auto-play)"),

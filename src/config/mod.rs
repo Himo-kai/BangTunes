@@ -1,4 +1,5 @@
-// Configuration management for PanPipe
+// Configuration management for BangTunes
+// Keeps all the settings in one place so nothing gets lost
 // Handles loading/saving settings, with sensible defaults when config is missing
 
 use anyhow::Result;

@@ -154,10 +154,11 @@ logs/
 bangtunes.toml
 !bangtunes.example.toml
 
-# PanPipe specific
+# Player specific
 playlists/
-panpipe.db
-panpipe.db-*
+player.db
+player.db-*
+.config/bangtunes/
 
 # OS generated files
 .DS_Store
@@ -183,3 +184,22 @@ Thumbs.db
 # Cache directories
 .cache/
 .ruff_cache/
+
+# Modern development tools
+node_modules/
+.npm/
+.yarn/
+.pnpm-store/
+
+# AI/ML model files (if we add AI features later)
+*.onnx
+*.pkl
+*.joblib
+*.h5
+*.pb
+
+# Audio processing temp files
+*.wav.tmp
+*.mp3.tmp
+*.opus.tmp
+*.m4a.tmp

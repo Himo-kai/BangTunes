@@ -310,7 +310,7 @@ impl App {
     }
     
     fn render_header(f: &mut Frame, area: Rect) {
-        let title = Paragraph::new("🎵 PanPipe - Terminal Music Player")
+        let title = Paragraph::new("🎵 BangTunes - Terminal Music Player")
             .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
             .block(Block::default().borders(Borders::ALL));
         

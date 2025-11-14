@@ -1,4 +1,5 @@
-// Audio engine - the heart of PanPipe's playback system
+// Audio engine - the heart of BangTunes playback
+// Handles all the messy audio stuff so the UI doesn't have to
 // Handles everything from file scanning to actual audio output
 
 pub mod player;          // core playback engine
