@@ -26,8 +26,15 @@ SOFTWARE.
 import os
 import subprocess
 import sqlite3
-import toml
 from pathlib import Path
+
+try:
+    import tomllib  # py3.11+
+except ImportError:
+    try:
+        import tomli as tomllib  # fallback for older Python
+    except ImportError:
+        tomllib = None
 from typing import Dict, Optional
 
 from rich.console import Console
@@ -84,27 +91,23 @@ class BangTunesPlayer:
     
     def setup_player_config(self) -> None:
         """Create player configuration pointing to BangTunes downloads"""
-        config = {
-            "music_directories": [str(self.downloads_dir)],
-            "database_path": str(self.player_db),
-            "spotify": {
-                "client_id": None,
-                "redirect_uri": "http://localhost:8888/callback"
-            },
-            "behavior": {
-                "skip_threshold_seconds": 30,
-                "weight_decay_days": 30,
-                "min_play_time_for_tracking": 10
-            },
-            "ui": {
-                "show_notifications": True,
-                "notification_duration_ms": 3000,
-                "theme": "default"
-            }
-        }
+        toml_content = '''[audio]
+volume = 0.7
+buffer_size_kb = 65
+
+[behavior]
+skip_threshold_seconds = 30
+weight_decay_days = 30
+min_play_time_for_tracking = 10
+
+[ui]
+show_notifications = true
+notification_duration_ms = 3000
+theme = "default"
+'''
         
         with open(self.player_config_file, 'w') as f:
-            toml.dump(config, f)
+            f.write(toml_content)
         
         console.print(f"[green]✅ Player config created at {self.player_config_file}[/green]")
     
