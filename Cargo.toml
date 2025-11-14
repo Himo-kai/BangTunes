@@ -1,0 +1,105 @@
+[package]
+name = "panpipe"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal-based music player with intelligent behavior tracking"
+authors = ["himokai"]
+license = "MIT"
+
+# Explicit bin definitions (recommended)
+[[bin]]
+name = "panpipe_interactive"
+path = "src/bin/panpipe_interactive.rs"
+
+[[bin]]
+name = "test_scanner"
+path = "src/bin/test_scanner.rs"
+
+[[bin]]
+name = "test_playback"
+path = "src/bin/test_playback.rs"
+
+[[bin]]
+name = "test_content_hash"
+path = "src/bin/test_content_hash.rs"
+
+[features]
+# keep the defaults lean—everything you always use
+default = ["tui", "audio", "behavior"]
+
+# compile-time switches
+tui = ["dep:ratatui", "dep:crossterm"]
+audio = ["dep:rodio"]
+behavior = ["dep:rusqlite", "dep:chrono", "dep:uuid"]
+
+# optional, only when you actually wire them
+probe = ["dep:symphonia"]          # duration/metadata probing beyond basic tags
+notify = ["dep:notify-rust"]       # desktop notifications
+spotify = ["dep:reqwest"]          # OAuth + Web API calls
+
+[dependencies]
+# Core ergonomics
+anyhow = "1.0"
+thiserror = "1.0"
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
+libc = "0.2"
+
+# Logging system
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+clap = { version = "4.0", features = ["derive"] }
+
+# Async runtime (you use timers, mpsc, spawn)
+tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+# TUI + terminal (gated by `tui`)
+ratatui = { version = "0.28", optional = true }
+crossterm = { version = "0.28", optional = true }
+
+# Audio (gated by `audio`) - Enable M4A/AAC codec support via Symphonia
+rodio = { version = "0.19", optional = true, features = ["symphonia-aac", "symphonia-isomp4"] }
+
+# Library scanning + tags
+walkdir = "2.5"
+id3 = "1.14"
+mp4ameta = "0.11"
+
+# Optional deeper format probing (gate behind `probe`)
+symphonia = { version = "0.5", default-features = false, optional = true, features = [
+  # Trim to formats you actually expect; expand later as needed
+  "mp3", "flac", "vorbis", "ogg", "aac", "isomp4", "wav"
+] }
+
+# Behavior storage (gated by `behavior`)
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+chrono = { version = "0.4", features = ["serde"], optional = true }
+uuid = { version = "1.10", features = ["v4", "serde"], optional = true }
+
+# Config + serde
+dirs = "5.0"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities you use in multiple places
+rand = "0.8"
+fuzzy-matcher = "0.3"
+regex = "1.10"
+futures = "0.3"
+
+# Optional notifications (gate behind `notify`)
+notify-rust = { version = "4.11", optional = true }
+
+# Optional web calls (spotify module is present but currently a stub)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+
+[dev-dependencies]
+tempfile = "3.12"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = "z"     # or "s" if you want a speed/size compromise
+strip = true
+panic = "abort"

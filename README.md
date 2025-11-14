@@ -21,11 +21,11 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Termux%20%7C%20WSL-lightgrey)](#installation)
 
-Bang Tunes helps you discover new music based on tracks you already like. It searches YouTube Music for similar songs, downloads them, and can play them through a terminal music player.
+Bang Tunes is a **complete music ecosystem** that helps you discover new music based on tracks you already like. It searches YouTube Music for similar songs, downloads them, and includes both basic and advanced playback capabilities - all in one unified package.
 
 **Perfect for**: People who spend a lot of time in terminals and want to find new music without dealing with streaming apps.
 
-**What it does**: Searches YouTube Music, downloads audio files, organizes everything in a database, and integrates with a terminal-based music player.
+**What it does**: Searches YouTube Music, downloads audio files, organizes everything in a database, and provides both basic playback (system players) and advanced playback (integrated TUI player with smart features).
 
 ## Features
 
@@ -47,14 +47,26 @@ Bang Tunes helps you discover new music based on tracks you already like. It sea
 - **Content Hashing**: xxhash64-based deduplication and move detection
 - **Unified Database**: Seamless sync between discovery and playback systems
 
+- Uses yt-dlp / YouTube Music for personal library building. Please respect YouTube's Terms of Service and your local laws.
+
 ## Architecture
 
+BangTunes is designed as a **standalone tool** with optional advanced features:
+
+### Core Dependencies (Required)
+
+- **Python 3.8+**: Runtime environment
 - **SQLite DB**: Persistent storage with `youtube_id` unique index for deduplication
 - **Rich Library**: Colored output, progress bars, and styled tables
 - **ytmusicapi**: YouTube Music search and metadata enrichment
 - **mutagen**: Audio file tagging and cover art embedding
 - **yt-dlp**: Reliable audio extraction and conversion
 - **rapidfuzz**: Fuzzy matching for music discovery
+
+### Playback Options
+
+- **Basic playback** (`quickplay`): Uses system audio players (ffplay, termux-media-player) - **no additional setup required**
+- **Advanced playback** (`play`): Integrated TUI player with smart shuffle and behavior tracking - **built-in, requires Rust for compilation**
 
 ## Getting Started in 3 Commands
 
@@ -114,7 +126,7 @@ mkdir -p ~/BangTunes/{batches,downloads}
 ### Using Requirements File
 
 ```bash
-cd /home/himokai/Builds/BangTunes
+cd ~/BangTunes
 pip install -r requirements.txt
 ```
 
@@ -342,7 +354,7 @@ chmod +x bang_tunes.py
 Enable verbose debug logging for troubleshooting:
 
 ```bash
-BANGTUNES_DEBUG=1 python bang_tunes.py download batch_001.csv
+BANGTUNES_DEBUG=1 python bang_tunes.py download mix_001.csv
 ```
 
 Debug mode provides:

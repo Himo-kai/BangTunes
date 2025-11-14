@@ -58,24 +58,12 @@ class PanPipeIntegration:
         self.panpipe_config_dir.mkdir(parents=True, exist_ok=True)
     
     def _resolve_panpipe_root(self, configured_root: Optional[str]) -> Path:
-        """Resolve PanPipe root directory from config or auto-detect"""
+        """Resolve PanPipe root directory - now integrated into BangTunes"""
         if configured_root:
             return Path(configured_root)
         
-        # Try to find PanPipe in common locations
-        candidates = [
-            Path("/home/himokai/Builds/PanPipe"),  # my usual dev setup
-            Path.home() / "Builds" / "PanPipe",
-            Path.home() / "PanPipe",
-            Path("./PanPipe"),  # maybe it's right here
-        ]
-        
-        for candidate in candidates:
-            if candidate.exists() and (candidate / "Cargo.toml").exists():
-                return candidate
-        
-        # Fallback to configured default
-        return Path("/home/himokai/Builds/PanPipe")
+        # PanPipe is now integrated directly into BangTunes
+        return self.bangtunes_root
     
     def setup_panpipe_config(self) -> None:
         """Create PanPipe configuration pointing to BangTunes downloads"""
@@ -216,16 +204,16 @@ class PanPipeIntegration:
                 binary_path = self.panpipe_root / "target" / "debug" / "panpipe_interactive"
             
             if not binary_path.exists():
-                console.print("[red]❌ PanPipe binary not found. Building...[/red]")
+                console.print("[red]PanPipe binary not found. Building...[/red]")
                 if not self._build_panpipe():
-                    console.print("[red]💥 Failed to build PanPipe. Please check:[/red]")
+                    console.print("[red]Failed to build PanPipe. Please check:[/red]")
                     console.print("[yellow]   1. Rust is installed: https://rustup.rs/[/yellow]")
                     console.print("[yellow]   2. PanPipe source is available at the configured path[/yellow]")
                     console.print("[yellow]   3. Run 'cargo build --release' manually in PanPipe directory[/yellow]")
                     return False
                 binary_path = self.panpipe_root / "target" / "release" / "panpipe_interactive"
             
-            console.print("[green]🎵 Launching PanPipe player...[/green]")
+            console.print("[green]Launching PanPipe player...[/green]")
             
             # Launch in the background or foreground based on track_path
             if track_path:

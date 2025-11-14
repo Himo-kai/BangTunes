@@ -113,6 +113,23 @@ chmod +x bang_tunes.py 2>/dev/null || true  # Ignore errors on Windows
 echo "Creating project directories..."
 mkdir -p batches downloads
 
+# Build integrated PanPipe player (if Rust is available)
+echo "Building integrated music player..."
+if command -v cargo &> /dev/null; then
+    echo "Rust detected - building PanPipe player for advanced features..."
+    cargo build --release
+    if [ $? -eq 0 ]; then
+        echo "PanPipe player built successfully!"
+    else
+        echo "Warning: PanPipe build failed. Advanced player features will be unavailable."
+        echo "Basic playback via 'quickplay' command will still work."
+    fi
+else
+    echo "Rust not found - skipping PanPipe build."
+    echo "Install Rust from https://rustup.rs/ for advanced player features."
+    echo "Basic playback via 'quickplay' command will still work."
+fi
+
 # Initialize seed file if it doesn't exist
 if [ ! -f "seed.csv" ]; then
     echo "Creating example seed.csv..."

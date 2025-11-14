@@ -26,7 +26,7 @@ Started this in my truck during downtime between jobs.
 Turned into something actually useful for finding new music.
 Integrates with my terminal music player setup.
 """
-# Bang Tunes — started on Termux, works everywhere now
+# Bang Tunes — CLI music discovery & playback
 # Basic idea: seed tracks -> find similar -> batch download -> profit
 import argparse
 import csv
