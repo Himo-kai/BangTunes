@@ -31,9 +31,9 @@ Bang Tunes helps you discover new music based on tracks you already love. Starte
 
 ### Music Discovery & Download
 
-- **Smart Discovery**: Feed it some tracks you like, it finds similar stuff you haven't heard
+- **Smart Discovery**: Feed it some tracks you like, it finds similar stuff for you to enjoy
 - **SQLite Database**: Keeps track of everything, no duplicates, easy to search
-- **Pretty Progress Bars**: Because watching downloads is oddly satisfying
+- **Pretty Progress Bars**: Because watching a download bar is better then the noise generated underneath 
 - **Good Metadata**: Pulls proper artist/album info and embeds it in the files
 - **Batch Downloads**: Grabs 50 tracks at a time, resumes if something goes wrong
 - **Decent Audio Quality**: High-quality opus files with album art embedded
@@ -42,11 +42,11 @@ Bang Tunes helps you discover new music based on tracks you already love. Starte
 ### Built-in Music Player
 
 - **Learns Your Taste**: Tracks what you skip and what you replay, shuffles accordingly
-- **Terminal Interface**: Clean TUI that doesn't get in your way, all keyboard driven
+- **Terminal Interface**: Clean terminal UI thats fully keyboard driven
 - **Fix Metadata**: Edit track info right in the player when things look wrong
 - **Plays Everything**: MP3, FLAC, OGG, whatever you throw at it
 - **Smart Deduplication**: Knows when you've moved files around, won't lose track
-- **Everything Connected**: Downloads and player share the same database, no sync headaches
+- **Everything Connected**: Downloads and player share the same database so no sync headaches
 
 - Uses yt-dlp / YouTube Music for personal library building. Please respect YouTube's Terms of Service and your local laws.
 
@@ -138,9 +138,9 @@ pip install -r requirements.txt
 
 ### 1. Customize Your Musical DNA (seed.csv)
 
-**🎯 IMPORTANT: This is the key to personalized music discovery!**
+**IMPORTANT: This is the key to personalized music discovery!**
 
-The `seed.csv` file is your musical DNA - it tells BangTunes what you like so it can find similar tracks. **You must edit this file with your own favorite songs** to get personalized playlists.
+The `seed.csv` file is the money shot - it tells BangTunes what you like so it can find similar tracks. **You must edit this file with your own favorite songs** to get personalized playlists.
 
 **Edit `seed.csv` with 10-20 of your favorite tracks:**
 
@@ -588,7 +588,7 @@ python bang_tunes.py build --seed nonexistent.csv  # Fails like a majestic freak
 python bang_tunes.py quickplay  # Handles no music just as well as my above statement.
 
 # Test cross-platform paths
-python bang_tunes.py stats  # Works on any OS
+python bang_tunes.py stats  # help me test on multiple Os's please
 ```
 
 **Player Integration Testing:**
@@ -704,21 +704,16 @@ python bang_tunes.py player-status
 - `rich`: Terminal UI and formatting
 - `rapidfuzz`: Fuzzy string matching for deduplication
 
-Thanks for contributing to BangTunes! Every improvement helps build a better music discovery experience for everyone.
-
-- **Curses TUI**: Full-screen terminal interface with arrow-key navigation
 - **Dedup Sweeper**: Filesystem vs database reconciliation
-- **License Filtering**: Optional Creative Commons-only discovery mode
+- **License Filtering**: Optional mode that biases discovery toward Creative Commons / license-friendly tracks mode
 
 ## Contributing
 
-This is a single-file designed for easy modification and extension. The code is structured with clear separation between:
+If you want to add something or fix something, just open a PR.  
+The code is straightforward, and most of the logic lives in `bang_tunes.py`, so it’s easy to follow.
 
-- Database operations (`db_*` functions)
-- Metadata handling (`embed_*`, `fetch_*` functions)
-- Music discovery (`search_*`, `build_*` functions)
-- File operations (`organize_*`, `run_*` functions)
-- CLI interface (`main` function)
+No strict rules — just try to keep things readable and don’t break the basic flow:
+seed → discovery → download → metadata → library sync.
 
 ## License
 
