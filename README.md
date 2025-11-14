@@ -123,7 +123,7 @@ pip install -U "yt-dlp[default]" ytmusicapi mutagen rapidfuzz rich
 mkdir -p ~/BangTunes/{batches,downloads}
 ```
 
-### Using Requirements File
+## Using Requirements File
 
 ```bash
 cd ~/BangTunes
