@@ -21,9 +21,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-BangTunes integrated player backend - bridges discovery with intelligent playback.
-This is the engine that makes BangTunes more than just a downloader.
 """
 
 import os
@@ -38,10 +35,9 @@ from rich.console import Console
 console = Console()
 
 class BangTunesPlayer:
-    """BangTunes integrated music player with intelligent behavior tracking
-    
-    This is where the magic happens - your downloaded music gets fed into
-    a player that learns what you like. No more random shuffle!
+    """Small player backend that reuses the BangTunes library.
+
+    Feeds downloaded tracks into a local player DB so you can track behavior
     """
     
     def __init__(self, bangtunes_root: Path, config: Optional[Dict] = None):

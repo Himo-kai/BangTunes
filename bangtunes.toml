@@ -18,9 +18,9 @@ size = 50
 # For mobile/storage-conscious: format = "opus", min_score = 50
 # For broad discovery: min_score = 40, size = 60
 
-# PanPipe Integration Settings
-[panpipe]
-# Path to PanPipe project (auto-detected if not set)
-root = "/home/himokai/Builds/PanPipe"
-# Configuration directory for PanPipe integration
-config_dir = "/home/himokai/.config/bangtunes"
+# Player Integration Settings
+[player]
+# Path to player source (auto-detected if not set)
+root = "~/Builds/BangTunes"
+# Configuration directory for player integration
+config_dir = "~/.config/bangtunes"
