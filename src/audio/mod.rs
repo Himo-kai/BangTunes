@@ -1,8 +1,11 @@
-pub mod player;
-pub mod track;
-pub mod scanner;
-pub mod metadata_parser;
-pub mod playlist;
+// Audio engine - the heart of PanPipe's playback system
+// Handles everything from file scanning to actual audio output
+
+pub mod player;          // core playback engine
+pub mod track;           // track representation and metadata
+pub mod scanner;         // finds music files in directories
+pub mod metadata_parser; // extracts ID3 tags and such
+pub mod playlist;        // playlist management
 
 pub use player::{AudioPlayer, PlaybackState};
 pub use track::{Track, TrackMetadata};

@@ -52,19 +52,39 @@ except ImportError:
     except ImportError:
         tomllib = None
 
-from rapidfuzz import fuzz
-from ytmusicapi import YTMusic
-from mutagen import File as MutagenFile
-from mutagen.id3 import ID3, APIC, ID3NoHeaderError
-from rich.console import Console
-from rich.table import Table
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    BarColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
+# Import required packages with error handling
+try:
+    from rapidfuzz import fuzz
+except ImportError:
+    print("Error: rapidfuzz not installed. Run: pip install rapidfuzz")
+    sys.exit(1)
+
+try:
+    from ytmusicapi import YTMusic
+except ImportError:
+    print("Error: ytmusicapi not installed. Run: pip install ytmusicapi")
+    sys.exit(1)
+
+try:
+    from mutagen import File as MutagenFile
+    from mutagen.id3 import ID3, APIC, ID3NoHeaderError
+except ImportError:
+    print("Error: mutagen not installed. Run: pip install mutagen")
+    sys.exit(1)
+
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.progress import (
+        Progress,
+        SpinnerColumn,
+        BarColumn,
+        TextColumn,
+        TimeRemainingColumn,
+    )
+except ImportError:
+    print("Error: rich not installed. Run: pip install rich")
+    sys.exit(1)
 
 # PanPipe Integration
 try:
@@ -80,12 +100,32 @@ except ImportError:
 # Debug mode support
 DEBUG_MODE = os.getenv("BANGTUNES_DEBUG", "false").lower() in ("true", "1", "yes")
 def detect_root() -> Path:
+    """Figure out where BangTunes lives - handles various install scenarios"""
+    # Most people will run this from the project directory
+    cwd = Path.cwd()
+    if (cwd / "bang_tunes.py").exists():
+        return cwd
+    
+    # Maybe you're running it from somewhere else? Check where the script actually is
+    script_dir = Path(__file__).parent.absolute()
+    if (script_dir / "bang_tunes.py").exists():
+        return script_dir
+    
+    # Check the usual suspects where people might put this
     home = Path.home()
-    preferred = home / "BangTunes"
-    builds = home / "Builds" / "BangTunes"
-    if preferred.exists():
-        return preferred
-    return builds
+    candidates = [
+        home / "BangTunes",
+        home / "Builds" / "BangTunes",  # my personal preference
+        home / "Downloads" / "BangTunes",  # common for git clones
+        home / "Music" / "BangTunes",  # makes sense thematically
+    ]
+    
+    for candidate in candidates:
+        if candidate.exists() and (candidate / "bang_tunes.py").exists():
+            return candidate
+    
+    # Give up and let them figure it out from wherever they are
+    return cwd
 
 
 def load_config() -> dict:
@@ -170,24 +210,41 @@ def print_banner() -> None:
 
 # --- DB layer ---
 def db_init() -> sqlite3.Connection:
-    """Initialize database with schema - returns connection for immediate use."""
-    conn = sqlite3.connect(DB)
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS tracks(
-        id INTEGER PRIMARY KEY,
-        youtube_id TEXT UNIQUE,
-        title TEXT,
-        artist TEXT,
-        album TEXT,
-        file_path TEXT,
-        added_on TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
-    conn.commit()
-    return conn
+    """Set up the database - now with better error handling and performance tweaks"""
+    try:
+        # Make sure the directory exists first (learned this the hard way)
+        DB.parent.mkdir(parents=True, exist_ok=True)
+        
+        conn = sqlite3.connect(DB)
+        conn.execute("PRAGMA foreign_keys = ON")  # keep data integrity
+        conn.execute("PRAGMA journal_mode = WAL")  # faster for concurrent access
+        
+        cur = conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS tracks(
+            id INTEGER PRIMARY KEY,
+            youtube_id TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            album TEXT,
+            file_path TEXT,
+            added_on TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_youtube_id ON tracks(youtube_id);")
+        conn.commit()
+        return conn
+        
+    except sqlite3.Error as e:
+        console.print(f"[red]Database initialization error[/red]: {e}")
+        console.print(f"[dim]Database path: {DB}[/dim]")
+        sys.exit(1)
+    except PermissionError:
+        console.print(f"[red]Permission denied creating database[/red]: {DB}")
+        console.print("[dim]Check directory permissions and try again[/dim]")
+        sys.exit(1)
 
 
 def get_db():
@@ -429,20 +486,73 @@ def build_pool_from_seed(
 
 # --- Batch I/O ---
 def read_seed() -> List[Dict[str, str]]:
+    """Load up the seed tracks - with better error messages this time"""
     if not SEED.exists():
         console.print(f"[red]Missing seed file[/red]: {SEED}")
+        console.print("[dim]Create a CSV file with headers: title,artist,notes[/dim]")
+        console.print("[dim]Example: 'Bohemian Rhapsody,Queen,Classic rock anthem'[/dim]")
         sys.exit(1)
-    rows = []
-    with open(SEED, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            if row.get("title") or row.get("artist"):
+    
+    try:
+        rows = []
+        with open(SEED, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            
+            # Make sure the CSV actually has the columns we need
+            if not reader.fieldnames:
+                console.print(f"[red]Empty or invalid CSV file[/red]: {SEED}")
+                sys.exit(1)
+            
+            # Check for the bare minimum: title and artist
+            required_headers = {"title", "artist"}
+            available_headers = set(reader.fieldnames)
+            missing_headers = required_headers - available_headers
+            
+            if missing_headers:
+                console.print(f"[red]Missing required CSV headers[/red]: {', '.join(missing_headers)}")
+                console.print(f"[dim]Found headers: {', '.join(reader.fieldnames)}[/dim]")
+                console.print("[dim]Required headers: title,artist (notes optional)[/dim]")
+                sys.exit(1)
+            
+            # Now check each row to make sure it's not garbage
+            for line_num, row in enumerate(reader, start=2):  # line 1 is headers, so start counting at 2
+                title = row.get("title", "").strip()
+                artist = row.get("artist", "").strip()
+                
+                if not title and not artist:
+                    console.print(f"[yellow]Warning: Empty row at line {line_num}, skipping[/yellow]")
+                    continue
+                
+                if not title:
+                    console.print(f"[yellow]Warning: Missing title at line {line_num}, skipping[/yellow]")
+                    continue
+                
+                if not artist:
+                    console.print(f"[yellow]Warning: Missing artist at line {line_num}, skipping[/yellow]")
+                    continue
+                
                 rows.append(row)
-    if not rows:
-        console.print(
-            "[red]seed.csv is empty or malformed. Need headers: title,artist,notes[/red]"
-        )
+        
+        if not rows:
+            console.print(f"[red]No valid entries found in seed file[/red]: {SEED}")
+            console.print("[dim]Each row needs both title and artist filled in[/dim]")
+            sys.exit(1)
+        
+        console.print(f"[dim]Loaded {len(rows)} seed tracks from {SEED}[/dim]")
+        return rows
+        
+    except PermissionError:
+        console.print(f"[red]Permission denied reading[/red]: {SEED}")
+        console.print("[dim]Check file permissions and try again[/dim]")
         sys.exit(1)
-    return rows
+    except UnicodeDecodeError:
+        console.print(f"[red]Invalid file encoding[/red]: {SEED}")
+        console.print("[dim]Save the CSV file with UTF-8 encoding[/dim]")
+        sys.exit(1)
+    except csv.Error as e:
+        console.print(f"[red]CSV parsing error[/red]: {e}")
+        console.print(f"[dim]Check that {SEED} is a valid CSV file[/dim]")
+        sys.exit(1)
 
 
 def write_batches(pool: List[Dict[str, str]], prefix: str, size: int) -> List[Path]:
@@ -567,18 +677,43 @@ def run_ytdlp_audio(
         url,
     ]
     try:
-        subprocess.run(cmd, check=True)
-        # Safer file pick: match by video ID from URL
-        vid = url.rsplit("=", 1)[-1]
-        files = list(out_dir.glob(f"{vid}.*"))
+        # Fire off yt-dlp but don't let it hang forever (5 min max)
+        subprocess.run(cmd, check=True, timeout=300, capture_output=True, text=True)
+        
+        # Try to find the file it just downloaded
+        vid_match = url.split("v=")[-1].split("&")[0]  # grab the video ID from the URL
+        files = list(out_dir.glob(f"{vid_match}.*"))
+        
         if not files:
+            # Hmm, can't find it by video ID. Maybe yt-dlp named it differently?
+            all_files = list(out_dir.glob("*.*"))
+            if all_files:
+                # Just grab whatever's newest - probably what we just downloaded
+                path = max(all_files, key=lambda p: p.stat().st_mtime)
+                return path
             return None
-        # pick newest matching file
+        
+        # Found it! Grab the newest one in case there are duplicates
         path = max(files, key=lambda p: p.stat().st_mtime)
         return path
+        
+    except subprocess.TimeoutExpired:
+        if DEBUG_MODE:
+            console.print(f"[yellow]DEBUG: yt-dlp timeout for {url}[/yellow]")
+        return None
     except subprocess.CalledProcessError as e:
         if DEBUG_MODE:
             console.print(f"[yellow]DEBUG: yt-dlp failed for {url}: {e}[/yellow]")
+            if e.stderr:
+                console.print(f"[yellow]DEBUG: stderr: {e.stderr}[/yellow]")
+        return None
+    except FileNotFoundError:
+        console.print(f"[red]Error: yt-dlp not found at {ytdlp_path}[/red]")
+        console.print("[dim]Install yt-dlp: pip install yt-dlp[/dim]")
+        return None
+    except PermissionError:
+        console.print(f"[red]Permission denied writing to {out_dir}[/red]")
+        console.print("[dim]Check directory permissions and try again[/dim]")
         return None
 
 
@@ -876,9 +1011,10 @@ def first_run_wizard() -> None:
         console.print("   ⚠ ffmpeg (not found - audio conversion may fail)")
         console.print("   [dim]Install: sudo apt install ffmpeg (Ubuntu) or brew install ffmpeg (macOS)[/dim]")
     
-    # Check yt-dlp
+    # Check yt-dlp availability
     try:
         import yt_dlp
+        del yt_dlp  # Just checking if it's available
         console.print("   ✓ yt-dlp (installed)")
     except ImportError:
         console.print("   ✗ yt-dlp (missing)")

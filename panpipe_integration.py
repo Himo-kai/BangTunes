@@ -38,7 +38,11 @@ from rich.console import Console
 console = Console()
 
 class PanPipeIntegration:
-    """Connects BangTunes downloads with the PanPipe music player"""
+    """Bridges BangTunes discovery with PanPipe's smart playback
+    
+    This is where the magic happens - your downloaded music gets fed into
+    a player that actually learns what you like. No more random shuffle!
+    """
     
     def __init__(self, bangtunes_root: Path, config: Optional[Dict] = None):
         self.bangtunes_root = bangtunes_root

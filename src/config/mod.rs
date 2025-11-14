@@ -1,3 +1,6 @@
+// Configuration management for PanPipe
+// Handles loading/saving settings, with sensible defaults when config is missing
+
 use anyhow::Result;
 use dirs::config_dir;
 use serde::{Deserialize, Serialize};

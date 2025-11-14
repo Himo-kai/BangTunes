@@ -2,9 +2,10 @@
 name = "panpipe"
 version = "0.1.0"
 edition = "2021"
-description = "A terminal-based music player with intelligent behavior tracking"
+description = "Smart terminal music player - learns what you like and adjusts accordingly"
 authors = ["himokai"]
 license = "MIT"
+# Part of the BangTunes music ecosystem - discovery meets intelligent playback
 
 # Explicit bin definitions (recommended)
 [[bin]]

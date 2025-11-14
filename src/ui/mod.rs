@@ -1,6 +1,9 @@
-mod app;
-mod components;
-pub mod events;
+// Terminal UI - the face of PanPipe
+// Built with ratatui for a modern, responsive terminal interface
+
+mod app;        // main application state and event loop
+mod components; // reusable UI widgets
+pub mod events; // keyboard/mouse event handling
 
 pub use app::App;
 pub use events::{AppEvent, EventHandler};

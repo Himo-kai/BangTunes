@@ -1,6 +1,10 @@
-pub mod database;
-pub mod tracker;
-pub mod weighting;
+// Behavior tracking - the "smart" part of PanPipe
+// Learns what you like/skip and adjusts shuffle accordingly
+// This is what makes it more than just another music player
+
+pub mod database;  // SQLite storage for behavior data
+pub mod tracker;   // tracks play sessions and skip patterns
+pub mod weighting; // calculates shuffle weights based on behavior
 
 pub use database::BehaviorDatabase;
 pub use tracker::{BehaviorTracker, PlaybackEvent, SkipReason};
