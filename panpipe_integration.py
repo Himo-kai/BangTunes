@@ -58,12 +58,29 @@ class PanPipeIntegration:
         self.panpipe_config_dir.mkdir(parents=True, exist_ok=True)
     
     def _resolve_panpipe_root(self, configured_root: Optional[str]) -> Path:
-        """Resolve PanPipe root directory - now integrated into BangTunes"""
+        """Resolve PanPipe root directory from config or auto-detect"""
         if configured_root:
-            return Path(configured_root)
+            return Path(configured_root).expanduser()
         
-        # PanPipe is now integrated directly into BangTunes
-        return self.bangtunes_root
+        candidates = [
+            # Preferred: inside this repo (single-repo layout)
+            self.bangtunes_root,
+            self.bangtunes_root / "PanPipe",
+            # Then CWD-based (for development)
+            Path.cwd(),
+            Path.cwd() / "PanPipe",
+            # Legacy fallbacks for existing setups
+            Path.home() / "Builds" / "PanPipe",
+            Path.home() / "PanPipe",
+        ]
+        
+        for candidate in candidates:
+            if (candidate / "Cargo.toml").exists():
+                return candidate
+        
+        raise RuntimeError(
+            "Could not locate PanPipe project. Set [panpipe].root in bangtunes.toml."
+        )
     
     def setup_panpipe_config(self) -> None:
         """Create PanPipe configuration pointing to BangTunes downloads"""
