@@ -28,6 +28,10 @@ Integrates with my terminal music player setup.
 """
 # Bang Tunes — CLI music discovery & playback
 # Basic idea: seed tracks -> find similar -> batch download -> profit
+
+from typing import Dict, List, Optional, Callable, Any, Generator
+from dataclasses import dataclass
+from pathlib import Path
 import argparse
 import csv
 import os
@@ -40,9 +44,7 @@ import subprocess
 import sys
 import time
 from contextlib import contextmanager
-from pathlib import Path
 from textwrap import dedent
-from typing import Dict, List, Optional, Callable, Any, Generator
 
 try:
     import tomllib  # py3.11+
@@ -1254,7 +1256,7 @@ def quick_play_mode() -> None:
 
 
 # --- CLI ---
-def main() -> None:
+def main(argv: Optional[List[str]] = None) -> int:
     global MIN_SCORE, BATCH_SIZE
 
     ROOT.mkdir(parents=True, exist_ok=True)

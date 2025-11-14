@@ -293,6 +293,38 @@ The SQLite database (`library.db`) stores:
 - `file_path`: Full path to audio file
 - `added_on`: Timestamp when added
 
+## Testing
+
+BangTunes includes a small pytest suite to guard the seed → batch → download pipeline.
+
+### Running Tests
+
+```bash
+# Install test dependencies
+pip install pytest
+
+# Run the smoke test suite
+pytest tests/ -v
+```
+
+### Test Coverage
+
+The test suite includes focused smoke tests for:
+
+- **CLI Help**: Verifies `--help` works without crashing
+- **Build Pipeline**: Tests seed CSV → batch CSV workflow
+- **View Command**: Ensures `view` handles empty libraries gracefully
+- **Behavior Logic**: Validates that loved tracks score higher than skipped ones
+
+Tests run in ~0.4 seconds and use real subprocess calls to validate actual CLI functionality.
+
+### Test Requirements
+
+```bash
+# Optional: Install test dependencies separately
+pip install -r requirements-test.txt
+```
+
 ## Command Reference
 
 ### Build Command
