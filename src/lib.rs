@@ -4,6 +4,7 @@
 pub mod audio;     // handles playback, scanning, metadata
 pub mod behavior;  // tracks what you like/skip
 pub mod config;    // settings and preferences
+pub mod database;  // BangTunes database integration
 pub mod export;    // playlist export features
 pub mod spotify;   // spotify integration (when needed)
 pub mod ui;        // terminal interface
@@ -12,3 +13,4 @@ pub mod ui;        // terminal interface
 pub use audio::{AudioPlayer, MusicScanner, Track, TrackMetadata};
 pub use behavior::{BehaviorTracker, TrackBehavior, PlaybackEvent, SkipReason};
 pub use config::Config;
+pub use database::{BangTunesDatabase, enhance_track_metadata};

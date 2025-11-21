@@ -9,6 +9,7 @@ use panpipe::{
     audio::{AudioPlayer, MusicScanner, metadata_parser::MetadataParser, scanner::ScanProgress, playlist::PlaylistManager, player::PlayerEvent},
     behavior::{BehaviorDatabase, BehaviorTracker, PlaybackEvent, SkipReason},
     config::Config,
+    database::BangTunesDatabase,
     ui::TerminalManager,
 };
 use ratatui::{
@@ -104,8 +105,8 @@ async fn main() -> Result<()> {
     println!("===================================");
     println!("Loading your music library...");
     
-    // Initialize music scanner with incremental loading
-    let scanner = MusicScanner::new();
+    // Initialize music scanner with BangTunes database integration
+    let scanner = MusicScanner::with_database();
     let (progress_tx, mut progress_rx) = mpsc::channel(128); // Bounded channel per analysis
     
     println!("📁 Scanning music directories...");
@@ -259,9 +260,12 @@ struct InteractiveApp {
     show_playlist_selector: bool,
     playlist_selector_state: ListState,
     selected_track_for_playlist: Option<usize>, // Track index to add to selected playlist
+    
+    // BangTunes database integration
+    database: Option<BangTunesDatabase>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum AppTab {
     Library,
     Playlists,
@@ -269,7 +273,7 @@ enum AppTab {
     Settings,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum EditMode {
     None,
     Title,
@@ -365,13 +369,16 @@ impl InteractiveApp {
             show_playlist_selector: false,
             playlist_selector_state: ListState::default(),
             selected_track_for_playlist: None,
+            
+            // Initialize BangTunes database integration
+            database: BangTunesDatabase::find_database().ok(),
         })
     }
     
     async fn play_specific_track(&mut self, track_path: &PathBuf) -> Result<()> {
         // Find the track in our library by path
         for (index, track) in self.tracks.iter().enumerate() {
-            if track.path == *track_path {
+            if track.file_path == *track_path {
                 info!("🎵 Found requested track: {:?}", track_path);
                 self.play_track(index).await?;
                 return Ok(());
@@ -519,7 +526,12 @@ impl InteractiveApp {
             (KeyCode::Char('3'), KeyModifiers::NONE) => Some(InteractiveEvent::SwitchToMetadataEditor),
             (KeyCode::Char('4'), KeyModifiers::NONE) => Some(InteractiveEvent::SwitchToSettings),
             (KeyCode::Char(' '), KeyModifiers::NONE) => Some(InteractiveEvent::TogglePlayPause),
-            (KeyCode::Char('n'), KeyModifiers::NONE) => Some(InteractiveEvent::NextTrack),
+            (KeyCode::Char('n'), KeyModifiers::NONE) => {
+                match self.current_tab {
+                    AppTab::MetadataEditor => None, // Block 'n' in metadata editor
+                    _ => Some(InteractiveEvent::NextTrack),
+                }
+            }
             (KeyCode::Char('p'), KeyModifiers::NONE) => Some(InteractiveEvent::PreviousTrack),
             (KeyCode::Char('s'), KeyModifiers::NONE) => Some(InteractiveEvent::Stop),
             (KeyCode::Char('+'), KeyModifiers::NONE) | (KeyCode::Char('='), KeyModifiers::NONE) => Some(InteractiveEvent::VolumeUp),
@@ -563,9 +575,12 @@ impl InteractiveApp {
                 }
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
-                match self.current_tab {
-                    AppTab::Playlists => Some(InteractiveEvent::TogglePlaylistExpansion),
-                    _ => Some(InteractiveEvent::Play), // Default behavior for other tabs
+                match (self.current_tab, self.edit_mode) {
+                    (AppTab::Playlists, EditMode::None) => Some(InteractiveEvent::TogglePlaylistExpansion),
+                    (AppTab::MetadataEditor, EditMode::Title | EditMode::Artist) => Some(InteractiveEvent::SaveMetadata),
+                    (AppTab::MetadataEditor, EditMode::None) => None, // Block Enter when not editing
+                    (_, EditMode::None) => Some(InteractiveEvent::Play), // Default behavior for other tabs
+                    _ => None,
                 }
             }
             
@@ -1599,22 +1614,57 @@ impl InteractiveApp {
     async fn save_current_edit(&mut self) -> Result<()> {
         if let Some(track_idx) = self.editing_track_index {
             if track_idx < self.tracks.len() {
-                let track = &mut self.tracks[track_idx];
+                // Get the file path before borrowing mutably
+                let file_path = self.tracks[track_idx].file_path.clone();
+                let edit_mode = self.edit_mode;
+                let edit_title = self.edit_title.clone();
+                let edit_artist = self.edit_artist.clone();
                 
-                match self.edit_mode {
+                // Update track metadata
+                {
+                    let track = &mut self.tracks[track_idx];
+                    match edit_mode {
+                        EditMode::Title => {
+                            track.metadata.title = Some(edit_title.clone());
+                        }
+                        EditMode::Artist => {
+                            track.metadata.artist = Some(edit_artist.clone());
+                        }
+                        EditMode::None => {}
+                    }
+                }
+                
+                // Set status message
+                match edit_mode {
                     EditMode::Title => {
-                        track.metadata.title = Some(self.edit_title.clone());
-                        self.set_status(&format!("✅ Title updated: {}", self.edit_title));
+                        self.set_status(&format!("✅ Title updated: {}", edit_title));
                     }
                     EditMode::Artist => {
-                        track.metadata.artist = Some(self.edit_artist.clone());
-                        self.set_status(&format!("✅ Artist updated: {}", self.edit_artist));
+                        self.set_status(&format!("✅ Artist updated: {}", edit_artist));
                     }
                     EditMode::None => {}
                 }
                 
-                // TODO: Save to file tags and database
-                // For now, just update in memory
+                // Save to BangTunes database if available
+                if let Some(ref database) = self.database {
+                    // Try to find the track in the database by file path
+                    if let Ok(Some(db_track)) = database.find_track_by_path(&file_path) {
+                        let track = &self.tracks[track_idx];
+                        let title = track.metadata.title.as_deref().unwrap_or("Unknown Title");
+                        let artist = track.metadata.artist.as_deref().unwrap_or("Unknown Artist");
+                        let album = track.metadata.album.as_deref().unwrap_or("Unknown Album");
+                        
+                        if let Err(e) = database.update_track_metadata(db_track.id, title, artist, album) {
+                            self.set_status(&format!("⚠️ Database update failed: {}", e));
+                        } else {
+                            self.set_status("💾 Saved to BangTunes database");
+                        }
+                    } else {
+                        self.set_status("⚠️ Track not found in BangTunes database");
+                    }
+                }
+                
+                // TODO: Also save to file tags using mutagen or similar
                 
                 self.edit_mode = EditMode::None;
                 self.editing_track_index = None;

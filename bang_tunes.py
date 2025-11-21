@@ -1378,8 +1378,12 @@ def quick_play_mode() -> None:
 
 def interactive_metadata_editor() -> None:
     """Interactive metadata editor with search, edit, and confirmation capabilities."""
-    console.print("[bold]Interactive Metadata Editor[/bold]")
-    console.print("[dim]Edit track metadata in your library[/dim]")
+    # Clear screen and enter isolated editor mode
+    _clear_screen()
+    
+    console.print("[bold green]🎵 BangTunes Metadata Editor (Isolated Mode)[/bold green]")
+    console.print("[dim]This editor runs independently from music player controls[/dim]")
+    console.print("[dim]All keys (including 'n' and Enter) work normally here[/dim]")
     console.print()
     
     with get_db() as conn:
@@ -1389,6 +1393,7 @@ def interactive_metadata_editor() -> None:
         console.print("[red]No tracks found in library![/red]")
         console.print("[dim]Download some music first:[/dim]")
         console.print("   [cyan]python bang_tunes.py build && python bang_tunes.py download mix_001.csv[/cyan]")
+        _safe_input("\nPress Enter to return...")
         return
     
     console.print(f"[green]Found {len(tracks)} tracks in library[/green]")
@@ -1397,9 +1402,11 @@ def interactive_metadata_editor() -> None:
     while True:
         console.print("[bold]Metadata Editor Menu:[/bold]")
         console.print("1. List all tracks")
-        console.print("2. Search tracks")
+        console.print("2. Search tracks") 
         console.print("3. Edit track metadata")
-        console.print("4. Exit")
+        console.print("4. Exit to main program")
+        console.print()
+        console.print("[dim]Note: You can type 'n', Enter, or any key normally in this editor[/dim]")
         console.print()
         
         try:
@@ -1534,14 +1541,48 @@ def _parse_artist_title(full_title: str) -> tuple[str, str]:
     return "Unknown Artist", full_title.strip()
 
 
+def _clear_screen():
+    """Clear the terminal screen for isolated editor mode."""
+    import os
+    os.system('clear' if os.name == 'posix' else 'cls')
+
+
 def _safe_input(prompt: str) -> str:
-    """Safe input function that handles interrupts gracefully."""
+    """Safe input function that handles interrupts gracefully and isolates from other handlers."""
+    import sys
+    
     try:
-        # Flush any pending output first
-        import sys
+        # Clear any pending input/output
         sys.stdout.flush()
-        return input(prompt).strip()
+        sys.stderr.flush()
+        
+        # Temporarily disable any signal handlers that might interfere
+        old_sigint = None
+        try:
+            import signal
+            old_sigint = signal.signal(signal.SIGINT, signal.default_int_handler)
+        except (AttributeError, ValueError, OSError):
+            pass
+        
+        # Use raw input to avoid conflicts
+        result = input(prompt).strip()
+        
+        # Restore signal handler
+        if old_sigint is not None:
+            try:
+                signal.signal(signal.SIGINT, old_sigint)
+            except (AttributeError, ValueError, OSError):
+                pass
+                
+        return result
+        
     except (KeyboardInterrupt, EOFError):
+        # Restore signal handler on interrupt
+        if 'old_sigint' in locals() and old_sigint is not None:
+            try:
+                signal.signal(signal.SIGINT, old_sigint)
+            except (AttributeError, ValueError, OSError):
+                pass
         raise KeyboardInterrupt("Input cancelled")
 
 

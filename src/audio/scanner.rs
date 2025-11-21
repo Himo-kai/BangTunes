@@ -1,4 +1,5 @@
 use super::{AudioFormat, Track, TrackMetadata};
+use crate::database::{BangTunesDatabase, enhance_track_metadata};
 use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use walkdir::WalkDir;
 #[derive(Clone)]
 pub struct MusicScanner {
     supported_extensions: Vec<String>,
+    database: Option<BangTunesDatabase>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +35,29 @@ impl MusicScanner {
                 "aac".to_string(),
                 "wav".to_string(),
             ],
+            database: None,
+        }
+    }
+
+    /// Create a new scanner with BangTunes database integration
+    pub fn with_database() -> Self {
+        let database = BangTunesDatabase::find_database().ok();
+        if database.is_none() {
+            eprintln!("Warning: Could not find BangTunes database, metadata will be limited to file tags");
+        }
+        
+        Self {
+            supported_extensions: vec![
+                "mp3".to_string(),
+                "flac".to_string(),
+                "ogg".to_string(),
+                "oga".to_string(),
+                "mp4".to_string(),
+                "m4a".to_string(),
+                "aac".to_string(),
+                "wav".to_string(),
+            ],
+            database,
         }
     }
 
@@ -221,6 +246,19 @@ impl MusicScanner {
                     .and_then(|stem| stem.to_str())
                     .map(|s| s.to_string());
             }
+        }
+
+        // Enhance metadata with BangTunes database information
+        if let Some(ref database) = self.database {
+            if let Ok(Some(db_track)) = database.find_track_by_path(path) {
+                enhance_track_metadata(&mut track, Some(&db_track));
+            } else {
+                // No database match, try smart parsing on existing metadata
+                enhance_track_metadata(&mut track, None);
+            }
+        } else {
+            // No database available, try smart parsing on existing metadata
+            enhance_track_metadata(&mut track, None);
         }
 
         // Compute content hash for deduplication and move detection
