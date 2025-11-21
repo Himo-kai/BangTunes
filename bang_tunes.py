@@ -1403,8 +1403,8 @@ def interactive_metadata_editor() -> None:
         console.print()
         
         try:
-            choice = input("Choose an option (1-4): ").strip()
-        except (KeyboardInterrupt, EOFError):
+            choice = _safe_input("Choose an option (1-4): ")
+        except KeyboardInterrupt:
             console.print("\n[yellow]Editor cancelled[/yellow]")
             return
         
@@ -1424,7 +1424,7 @@ def interactive_metadata_editor() -> None:
 
 
 def _list_all_tracks(tracks: List[Dict[str, Any]]) -> None:
-    """Display all tracks in a formatted table."""
+    """Display all tracks in a formatted table with smart artist detection."""
     console.print()
     
     table = Table(title="All Tracks")
@@ -1435,10 +1435,19 @@ def _list_all_tracks(tracks: List[Dict[str, Any]]) -> None:
     table.add_column("File", style="dim")
     
     for track in tracks:
+        # Smart artist detection
+        display_artist = track["artist"]
+        if not display_artist or display_artist.strip() == "":
+            parsed_artist, _ = _parse_artist_title(track["title"] or "")
+            if parsed_artist != "Unknown Artist":
+                display_artist = f"{parsed_artist} [dim](detected)[/dim]"
+            else:
+                display_artist = "Unknown Artist"
+        
         file_status = "✓" if track["file_path"] and Path(track["file_path"]).exists() else "✗"
         table.add_row(
             str(track["id"]),
-            track["artist"] or "Unknown Artist",
+            display_artist,
             track["title"] or "Unknown Title", 
             track["album"] or "Unknown Album",
             file_status
@@ -1453,8 +1462,8 @@ def _search_tracks(tracks: List[Dict[str, Any]]) -> None:
     console.print()
     
     try:
-        query = input("Enter search term (artist, title, or album): ").strip().lower()
-    except (KeyboardInterrupt, EOFError):
+        query = _safe_input("Enter search term (artist, title, or album): ").lower()
+    except KeyboardInterrupt:
         console.print("\n[yellow]Search cancelled[/yellow]")
         return
     
@@ -1484,9 +1493,18 @@ def _search_tracks(tracks: List[Dict[str, Any]]) -> None:
     table.add_column("Album", style="blue")
     
     for track in matches:
+        # Smart artist detection for search results too
+        display_artist = track["artist"]
+        if not display_artist or display_artist.strip() == "":
+            parsed_artist, _ = _parse_artist_title(track["title"] or "")
+            if parsed_artist != "Unknown Artist":
+                display_artist = f"{parsed_artist} [dim](detected)[/dim]"
+            else:
+                display_artist = "Unknown Artist"
+        
         table.add_row(
             str(track["id"]),
-            track["artist"] or "Unknown Artist",
+            display_artist,
             track["title"] or "Unknown Title",
             track["album"] or "Unknown Album"
         )
@@ -1495,14 +1513,46 @@ def _search_tracks(tracks: List[Dict[str, Any]]) -> None:
     console.print()
 
 
+def _parse_artist_title(full_title: str) -> tuple[str, str]:
+    """Attempt to parse artist and title from a full title string."""
+    if not full_title:
+        return "Unknown Artist", "Unknown Title"
+    
+    # Common separators for "Artist - Title" format
+    separators = [" - ", " – ", " — ", " | ", ": "]
+    
+    for sep in separators:
+        if sep in full_title:
+            parts = full_title.split(sep, 1)
+            if len(parts) == 2:
+                artist = parts[0].strip()
+                title = parts[1].strip()
+                if artist and title:
+                    return artist, title
+    
+    # If no separator found, assume the whole thing is the title
+    return "Unknown Artist", full_title.strip()
+
+
+def _safe_input(prompt: str) -> str:
+    """Safe input function that handles interrupts gracefully."""
+    try:
+        # Flush any pending output first
+        import sys
+        sys.stdout.flush()
+        return input(prompt).strip()
+    except (KeyboardInterrupt, EOFError):
+        raise KeyboardInterrupt("Input cancelled")
+
+
 def _edit_track_metadata(tracks: List[Dict[str, Any]]) -> None:
     """Edit metadata for a specific track."""
     console.print()
     
     try:
-        track_id_input = input("Enter track ID to edit: ").strip()
+        track_id_input = _safe_input("Enter track ID to edit: ")
         track_id = int(track_id_input)
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt:
         console.print("\n[yellow]Edit cancelled[/yellow]")
         return
     except ValueError:
@@ -1520,32 +1570,47 @@ def _edit_track_metadata(tracks: List[Dict[str, Any]]) -> None:
         console.print(f"[red]Track ID {track_id} not found[/red]")
         return
     
+    # Smart metadata detection - parse from title if artist is missing
+    current_artist = track['artist']
+    current_title = track['title']
+    
+    if not current_artist or current_artist.strip() == "":
+        # Try to parse artist from title
+        parsed_artist, parsed_title = _parse_artist_title(current_title or "")
+        if parsed_artist != "Unknown Artist":
+            current_artist = parsed_artist
+            # Optionally update the title too if it was parsed
+            if parsed_title != current_title:
+                console.print(f"[dim]Detected artist from title: {parsed_artist}[/dim]")
+    
     # Display current metadata
     console.print(f"[bold]Editing Track ID {track_id}:[/bold]")
     console.print()
     console.print("[dim]Current metadata:[/dim]")
-    console.print(f"  Artist: [green]{track['artist'] or 'Unknown Artist'}[/green]")
-    console.print(f"  Title:  [yellow]{track['title'] or 'Unknown Title'}[/yellow]")
+    console.print(f"  Artist: [green]{current_artist or 'Unknown Artist'}[/green]")
+    console.print(f"  Title:  [yellow]{current_title or 'Unknown Title'}[/yellow]")
     console.print(f"  Album:  [blue]{track['album'] or 'Unknown Album'}[/blue]")
     console.print()
     
     # Get new metadata
     try:
         console.print("[dim]Enter new metadata (press Enter to keep current value):[/dim]")
+        console.print("[dim]Note: This editor is separate from music player controls[/dim]")
+        console.print()
         
-        new_artist = input(f"Artist [{track['artist']}]: ").strip()
+        new_artist = _safe_input(f"Artist [{current_artist or 'Unknown Artist'}]: ")
         if not new_artist:
-            new_artist = track['artist'] or "Unknown Artist"
+            new_artist = current_artist or "Unknown Artist"
         
-        new_title = input(f"Title [{track['title']}]: ").strip()
+        new_title = _safe_input(f"Title [{current_title or 'Unknown Title'}]: ")
         if not new_title:
-            new_title = track['title'] or "Unknown Title"
+            new_title = current_title or "Unknown Title"
         
-        new_album = input(f"Album [{track['album']}]: ").strip()
+        new_album = _safe_input(f"Album [{track['album'] or 'Unknown Album'}]: ")
         if not new_album:
             new_album = track['album'] or "Unknown Album"
         
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt:
         console.print("\n[yellow]Edit cancelled[/yellow]")
         return
     
@@ -1572,8 +1637,8 @@ def _edit_track_metadata(tracks: List[Dict[str, Any]]) -> None:
     
     # Confirm changes
     try:
-        confirm = input("Apply these changes? (y/N): ").strip().lower()
-    except (KeyboardInterrupt, EOFError):
+        confirm = _safe_input("Apply these changes? (y/N): ").lower()
+    except KeyboardInterrupt:
         console.print("\n[yellow]Edit cancelled[/yellow]")
         return
     
