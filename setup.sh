@@ -27,6 +27,25 @@ set -e  # Exit on any error
 
 echo "Bang Tunes Setup"
 echo "================="
+
+# Check if we're in Termux and recommend the specialized script
+if [[ "$PREFIX" == *"com.termux"* ]]; then
+    echo "🤖 Termux/Android detected!"
+    echo
+    echo "For the best Termux experience, use the specialized setup script:"
+    echo "   ./termux-setup.sh"
+    echo
+    echo "This script will continue with generic setup, but termux-setup.sh"
+    echo "handles Android-specific dependencies and optimizations better."
+    echo
+    read -p "Continue with generic setup? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Run: ./termux-setup.sh"
+        exit 0
+    fi
+fi
+
 echo "Setting up music discovery tools..."
 echo ""
 

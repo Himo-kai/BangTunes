@@ -93,17 +93,35 @@ That's it and now you'll have some new music to check out.
 
 Bang Tunes requires Python 3.8+ and works best on Linux/Termux environments.
 
-### Termux Setup (Android)
+### Termux (Android) Setup
+
+**Single Command Setup (Recommended):**
 
 ```bash
-# Enable shared storage access (for accessing Android's internal storage)
+cd ~/BangTunes
+./termux-setup.sh
+```
+
+This script automatically:
+- Installs all system dependencies (python, ffmpeg, rust)
+- Sets up Python virtual environment
+- Installs all Python packages
+- Creates project structure
+- Builds Rust components (if possible)
+- Tests the installation
+- Provides clear next steps
+
+**Manual Setup (if needed):**
+
+```bash
+# Enable shared storage access (optional)
 termux-setup-storage
 
 # Update packages
 pkg update && pkg upgrade -y
 
 # Install dependencies
-pkg install -y python ffmpeg
+pkg install -y python ffmpeg rust
 
 # Install Python packages
 pip install -U "yt-dlp[default]" ytmusicapi mutagen rapidfuzz rich

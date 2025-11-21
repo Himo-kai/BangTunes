@@ -52,25 +52,61 @@ except ImportError:
     except ImportError:
         tomllib = None
 
+def check_dependencies():
+    """Check if required dependencies are installed."""
+    missing = []
+    
+    try:
+        import rapidfuzz
+    except ImportError:
+        missing.append("rapidfuzz")
+    
+    try:
+        import ytmusicapi
+    except ImportError:
+        missing.append("ytmusicapi")
+    
+    try:
+        import mutagen
+    except ImportError:
+        missing.append("mutagen")
+    
+    try:
+        import rich
+    except ImportError:
+        missing.append("rich")
+    
+    if missing:
+        print("❌ Missing Python dependencies!")
+        print()
+        print("Quick fix:")
+        if os.environ.get('PREFIX', '').find('com.termux') != -1:
+            print("   ./termux-setup.sh")
+        else:
+            print("   pip install -r requirements.txt")
+        print()
+        print("Or install individually:")
+        for dep in missing:
+            print(f"   pip install {dep}")
+        sys.exit(1)
+
+
 # Import required packages with error handling
 try:
     from rapidfuzz import fuzz
 except ImportError:
-    print("Error: rapidfuzz not installed. Run: pip install rapidfuzz")
-    sys.exit(1)
+    check_dependencies()
 
 try:
     from ytmusicapi import YTMusic
 except ImportError:
-    print("Error: ytmusicapi not installed. Run: pip install ytmusicapi")
-    sys.exit(1)
+    check_dependencies()
 
 try:
     from mutagen import File as MutagenFile
     from mutagen.id3 import ID3, APIC, ID3NoHeaderError
 except ImportError:
-    print("Error: mutagen not installed. Run: pip install mutagen")
-    sys.exit(1)
+    check_dependencies()
 
 try:
     from rich.console import Console
@@ -83,8 +119,7 @@ try:
         TimeRemainingColumn,
     )
 except ImportError:
-    print("Error: rich not installed. Run: pip install rich")
-    sys.exit(1)
+    check_dependencies()
 
 # BangTunes Player Integration
 try:
