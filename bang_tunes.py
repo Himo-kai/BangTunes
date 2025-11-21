@@ -29,7 +29,6 @@ Integrates with my terminal music player setup.
 # Basic idea: seed tracks -> find similar -> batch download
 
 from typing import Dict, List, Optional, Callable, Any, Generator
-from dataclasses import dataclass
 from pathlib import Path
 import argparse
 import csv
@@ -213,7 +212,7 @@ def print_banner() -> None:
 def db_init() -> sqlite3.Connection:
     """Set up the database."""
     try:
-        # Make sure the directory exists first(learnd this the hard way)
+        # Ensure database directory exists
         DB.parent.mkdir(parents=True, exist_ok=True)
         
         conn = sqlite3.connect(DB)
@@ -235,6 +234,8 @@ def db_init() -> sqlite3.Connection:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_youtube_id ON tracks(youtube_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_file_path ON tracks(file_path);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_added_on ON tracks(added_on);")
         conn.commit()
         return conn
         
@@ -253,29 +254,46 @@ def get_db():
     
     Automatically initializes schema if db doesn't exist.
     """
-    db_exists = Path(DB).exists()
-    conn = sqlite3.connect(DB)
-    
-    # Set up the db schema if it's a fresh install
-    if not db_exists:
-        cur = conn.cursor()
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS tracks(
-            id INTEGER PRIMARY KEY,
-            youtube_id TEXT UNIQUE,
-            title TEXT,
-            artist TEXT,
-            album TEXT,
-            file_path TEXT,
-            added_on TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-        # These indexes help with the stats queries
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
-        conn.commit()
-    
-    return conn
+    try:
+        # Ensure database directory exists
+        DB.parent.mkdir(parents=True, exist_ok=True)
+        
+        db_exists = Path(DB).exists()
+        conn = sqlite3.connect(DB)
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        
+        # Set up the db schema if it's a fresh install
+        if not db_exists:
+            cur = conn.cursor()
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS tracks(
+                id INTEGER PRIMARY KEY,
+                youtube_id TEXT UNIQUE,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                file_path TEXT,
+                added_on TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+            # Create database indexes for query performance
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_file_path ON tracks(file_path);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_added_on ON tracks(added_on);")
+            conn.commit()
+        
+        return conn
+        
+    except sqlite3.Error as e:
+        console.print(f"[red]Database connection error[/red]: {e}")
+        console.print(f"[dim]Database path: {DB}[/dim]")
+        raise
+    except PermissionError:
+        console.print(f"[red]Permission denied accessing database[/red]: {DB}")
+        console.print("[dim]Check directory permissions and try again[/dim]")
+        raise
 
 
 def db_has_yid(conn: sqlite3.Connection, yid: str) -> bool:
@@ -316,22 +334,99 @@ def sanitize(name: str) -> str:
     return re.sub(r"[^-\w.\s]", "_", name).strip()
 
 
+def db_get_all_tracks(conn: sqlite3.Connection, limit: Optional[int] = None, offset: int = 0) -> List[Dict[str, Any]]:
+    """Get tracks from database with metadata, with optional pagination for performance."""
+    cur = conn.cursor()
+    
+    # Use pagination for large libraries to improve performance
+    query = """
+        SELECT id, youtube_id, title, artist, album, file_path, added_on 
+        FROM tracks 
+        ORDER BY artist, album, title
+    """
+    
+    if limit is not None:
+        query += f" LIMIT {limit} OFFSET {offset}"
+    
+    cur.execute(query)
+    rows = cur.fetchall()
+    return [
+        {
+            "id": row[0],
+            "youtube_id": row[1], 
+            "title": row[2],
+            "artist": row[3],
+            "album": row[4],
+            "file_path": row[5],
+            "added_on": row[6]
+        }
+        for row in rows
+    ]
+
+
+def db_get_track_count(conn: sqlite3.Connection) -> int:
+    """Get total number of tracks for pagination."""
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM tracks")
+    return cur.fetchone()[0]
+
+
+def db_update_track_metadata(conn: sqlite3.Connection, track_id: int, title: str, artist: str, album: str) -> bool:
+    """Update track metadata in database and file tags."""
+    try:
+        cur = conn.cursor()
+        
+        # Get current track info
+        cur.execute("SELECT file_path FROM tracks WHERE id = ?", (track_id,))
+        result = cur.fetchone()
+        if not result:
+            return False
+            
+        file_path = result[0]
+        
+        # Update database
+        cur.execute("""
+            UPDATE tracks 
+            SET title = ?, artist = ?, album = ? 
+            WHERE id = ?
+        """, (title, artist, album, track_id))
+        
+        # Update file tags if file exists
+        if file_path and Path(file_path).exists():
+            embed_easy_tags(Path(file_path), title, artist, album, None)
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        console.print(f"[red]Error updating metadata: {e}[/red]")
+        return False
+
+
 # --- Metadata helpers ---
 def embed_easy_tags(
     path: Path, title: str, artist: str, album: Optional[str], year: Optional[str]
 ) -> None:
-    # Use EasyID3 for mp3; mutagen handles opus/vorbis differently (vorbis comments)
-    audio = MutagenFile(path, easy=True)
-    if audio is None:
-        return
-    audio["title"] = [title] if title else []
-    if artist:
-        audio["artist"] = [artist]
-    if album:
-        audio["album"] = [album]
-    if year:
-        audio["date"] = [str(year)]
-    audio.save()
+    """Embed metadata tags into audio file with error handling."""
+    try:
+        # Use EasyID3 for mp3; mutagen handles opus/vorbis differently (vorbis comments)
+        audio = MutagenFile(path, easy=True)
+        if audio is None:
+            console.print(f"[yellow]⚠️ Could not load audio file for tagging: {path}[/yellow]")
+            return
+            
+        audio["title"] = [title] if title else []
+        if artist:
+            audio["artist"] = [artist]
+        if album:
+            audio["album"] = [album]
+        if year:
+            audio["date"] = [str(year)]
+        audio.save()
+        
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Failed to embed tags in {path.name}: {e}[/yellow]")
+        # Don't raise - this is not critical enough to stop the whole process
 
 
 def embed_cover_mp3(path: Path, image_bytes: bytes) -> None:
@@ -455,8 +550,8 @@ def search_related(ytm: "YTMusic", title: str, artist: str) -> List[Dict[str, st
 def build_pool_from_seed(
     seed_rows: List[Dict[str, str]], cc_only: bool = False
 ) -> List[Dict[str, str]]:
-    ytm = YTMusic()  # using public mode for now, might add login later
-    pool = []  # collect all candidates here
+    ytm = YTMusic()  # Initialize YouTube Music API client
+    pool = []  # Store discovered track candidates
     for row in seed_rows:
         base_key = " ".join(
             [row.get("title", ""), row.get("artist", ""), row.get("notes", "")]
@@ -473,9 +568,9 @@ def build_pool_from_seed(
             if isinstance(score, (int, float)) and score >= MIN_SCORE:
                 filtered_cands.append(c)
         pool.extend(filtered_cands)
-        time.sleep(0.5)  # be nice to YouTube's servers
+        time.sleep(0.5)  # Rate limiting for API requests
     pool.sort(key=lambda x: x["score"], reverse=True)
-    # remove duplicates from the pool
+    # Remove duplicate tracks by video ID
     seen, final = set(), []
     for c in pool:
         if c["videoId"] in seen:
@@ -1254,6 +1349,232 @@ def quick_play_mode() -> None:
     console.print("   [cyan]python bang_tunes.py setup-player && python bang_tunes.py play[/cyan]")
 
 
+def interactive_metadata_editor() -> None:
+    """Interactive metadata editor with search, edit, and confirmation capabilities."""
+    console.print("[bold]Interactive Metadata Editor[/bold]")
+    console.print("[dim]Edit track metadata in your library[/dim]")
+    console.print()
+    
+    with get_db() as conn:
+        tracks = db_get_all_tracks(conn)
+    
+    if not tracks:
+        console.print("[red]No tracks found in library![/red]")
+        console.print("[dim]Download some music first:[/dim]")
+        console.print("   [cyan]python bang_tunes.py build && python bang_tunes.py download mix_001.csv[/cyan]")
+        return
+    
+    console.print(f"[green]Found {len(tracks)} tracks in library[/green]")
+    console.print()
+    
+    while True:
+        console.print("[bold]Metadata Editor Menu:[/bold]")
+        console.print("1. List all tracks")
+        console.print("2. Search tracks")
+        console.print("3. Edit track metadata")
+        console.print("4. Exit")
+        console.print()
+        
+        try:
+            choice = input("Choose an option (1-4): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]Editor cancelled[/yellow]")
+            return
+        
+        if choice == "1":
+            _list_all_tracks(tracks)
+        elif choice == "2":
+            _search_tracks(tracks)
+        elif choice == "3":
+            _edit_track_metadata(tracks)
+        elif choice == "4":
+            console.print("[green]Metadata editor closed[/green]")
+            return
+        else:
+            console.print("[red]Invalid choice. Please enter 1-4.[/red]")
+        
+        console.print()
+
+
+def _list_all_tracks(tracks: List[Dict[str, Any]]) -> None:
+    """Display all tracks in a formatted table."""
+    console.print()
+    
+    table = Table(title="All Tracks")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Artist", style="green")
+    table.add_column("Title", style="yellow")
+    table.add_column("Album", style="blue")
+    table.add_column("File", style="dim")
+    
+    for track in tracks:
+        file_status = "✓" if track["file_path"] and Path(track["file_path"]).exists() else "✗"
+        table.add_row(
+            str(track["id"]),
+            track["artist"] or "Unknown Artist",
+            track["title"] or "Unknown Title", 
+            track["album"] or "Unknown Album",
+            file_status
+        )
+    
+    console.print(table)
+    console.print()
+
+
+def _search_tracks(tracks: List[Dict[str, Any]]) -> None:
+    """Search tracks by artist, title, or album."""
+    console.print()
+    
+    try:
+        query = input("Enter search term (artist, title, or album): ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Search cancelled[/yellow]")
+        return
+    
+    if not query:
+        console.print("[red]Empty search term[/red]")
+        return
+    
+    # Search tracks
+    matches = []
+    for track in tracks:
+        if (query in (track["artist"] or "").lower() or 
+            query in (track["title"] or "").lower() or 
+            query in (track["album"] or "").lower()):
+            matches.append(track)
+    
+    if not matches:
+        console.print(f"[red]No tracks found matching '{query}'[/red]")
+        return
+    
+    console.print(f"[green]Found {len(matches)} matching tracks:[/green]")
+    console.print()
+    
+    table = Table(title=f"Search Results: '{query}'")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Artist", style="green")
+    table.add_column("Title", style="yellow")
+    table.add_column("Album", style="blue")
+    
+    for track in matches:
+        table.add_row(
+            str(track["id"]),
+            track["artist"] or "Unknown Artist",
+            track["title"] or "Unknown Title",
+            track["album"] or "Unknown Album"
+        )
+    
+    console.print(table)
+    console.print()
+
+
+def _edit_track_metadata(tracks: List[Dict[str, Any]]) -> None:
+    """Edit metadata for a specific track."""
+    console.print()
+    
+    try:
+        track_id_input = input("Enter track ID to edit: ").strip()
+        track_id = int(track_id_input)
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Edit cancelled[/yellow]")
+        return
+    except ValueError:
+        console.print("[red]Invalid track ID. Please enter a number.[/red]")
+        return
+    
+    # Find the track
+    track = None
+    for t in tracks:
+        if t["id"] == track_id:
+            track = t
+            break
+    
+    if not track:
+        console.print(f"[red]Track ID {track_id} not found[/red]")
+        return
+    
+    # Display current metadata
+    console.print(f"[bold]Editing Track ID {track_id}:[/bold]")
+    console.print()
+    console.print("[dim]Current metadata:[/dim]")
+    console.print(f"  Artist: [green]{track['artist'] or 'Unknown Artist'}[/green]")
+    console.print(f"  Title:  [yellow]{track['title'] or 'Unknown Title'}[/yellow]")
+    console.print(f"  Album:  [blue]{track['album'] or 'Unknown Album'}[/blue]")
+    console.print()
+    
+    # Get new metadata
+    try:
+        console.print("[dim]Enter new metadata (press Enter to keep current value):[/dim]")
+        
+        new_artist = input(f"Artist [{track['artist']}]: ").strip()
+        if not new_artist:
+            new_artist = track['artist'] or "Unknown Artist"
+        
+        new_title = input(f"Title [{track['title']}]: ").strip()
+        if not new_title:
+            new_title = track['title'] or "Unknown Title"
+        
+        new_album = input(f"Album [{track['album']}]: ").strip()
+        if not new_album:
+            new_album = track['album'] or "Unknown Album"
+        
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Edit cancelled[/yellow]")
+        return
+    
+    # Show changes and confirm
+    console.print()
+    console.print("[bold]Proposed changes:[/bold]")
+    
+    changes_made = False
+    if new_artist != track['artist']:
+        console.print(f"  Artist: [red]{track['artist']}[/red] → [green]{new_artist}[/green]")
+        changes_made = True
+    if new_title != track['title']:
+        console.print(f"  Title:  [red]{track['title']}[/red] → [yellow]{new_title}[/yellow]")
+        changes_made = True
+    if new_album != track['album']:
+        console.print(f"  Album:  [red]{track['album']}[/red] → [blue]{new_album}[/blue]")
+        changes_made = True
+    
+    if not changes_made:
+        console.print("[dim]No changes made[/dim]")
+        return
+    
+    console.print()
+    
+    # Confirm changes
+    try:
+        confirm = input("Apply these changes? (y/N): ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Edit cancelled[/yellow]")
+        return
+    
+    if confirm not in ['y', 'yes']:
+        console.print("[yellow]Changes cancelled[/yellow]")
+        return
+    
+    # Apply changes
+    with get_db() as conn:
+        success = db_update_track_metadata(conn, track_id, new_title, new_artist, new_album)
+    
+    if success:
+        console.print("[green]✓ Metadata updated successfully![/green]")
+        
+        # Update the track in our local list for immediate reflection
+        track['title'] = new_title
+        track['artist'] = new_artist
+        track['album'] = new_album
+        
+        # Show file update status
+        if track['file_path'] and Path(track['file_path']).exists():
+            console.print("[dim]✓ File tags updated[/dim]")
+        else:
+            console.print("[dim]⚠ File not found - database updated only[/dim]")
+    else:
+        console.print("[red]✗ Failed to update metadata[/red]")
+
+
 # --- CLI ---
 def main(argv: Optional[List[str]] = None) -> int:
     global MIN_SCORE, BATCH_SIZE
@@ -1297,6 +1618,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub.add_parser("install", help="First-run setup wizard - creates directories, checks deps, tests API")
     sub.add_parser("stats", help="Show library statistics and gallery of results")
     sub.add_parser("quickplay", help="Instant music playback (ffplay/termux) - no setup required")
+    sub.add_parser("edit-metadata", help="Interactive metadata editor - search, view, and edit track information")
     
     r = sub.add_parser("rescan", help="Compare DB with disk and report mismatches")
     r.add_argument(
@@ -1386,6 +1708,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     
     if args.cmd == "quickplay":
         quick_play_mode()
+        return
+    
+    if args.cmd == "edit-metadata":
+        interactive_metadata_editor()
         return
 
 

@@ -36,6 +36,10 @@ struct Args {
     /// Enable developer logging (stderr + debug output)
     #[arg(long)]
     dev: bool,
+    
+    /// Start playing a specific track file
+    #[arg(long, value_name = "PATH")]
+    play_track: Option<PathBuf>,
 }
 
 fn init_logging(dev: bool) -> Result<()> {
@@ -174,6 +178,11 @@ async fn main() -> Result<()> {
     
     // Initialize the interactive app
     let mut app = InteractiveApp::new(config, all_tracks).await?;
+    
+    // If a specific track was requested, try to play it
+    if let Some(track_path) = args.play_track {
+        app.play_specific_track(&track_path).await?;
+    }
     
     // Run the interactive interface
     app.run().await?;
@@ -357,6 +366,22 @@ impl InteractiveApp {
             playlist_selector_state: ListState::default(),
             selected_track_for_playlist: None,
         })
+    }
+    
+    async fn play_specific_track(&mut self, track_path: &PathBuf) -> Result<()> {
+        // Find the track in our library by path
+        for (index, track) in self.tracks.iter().enumerate() {
+            if track.path == *track_path {
+                info!("🎵 Found requested track: {:?}", track_path);
+                self.play_track(index).await?;
+                return Ok(());
+            }
+        }
+        
+        // If not found in library, log a warning but don't fail
+        info!("⚠️ Requested track not found in library: {:?}", track_path);
+        self.set_status(&format!("Track not found: {}", track_path.display()));
+        Ok(())
     }
     
     async fn run(&mut self) -> Result<()> {

@@ -33,7 +33,7 @@ Bang Tunes helps you discover new music based on tracks you already love. Starte
 
 - **Smart Discovery**: Feed it some tracks you like, it finds similar stuff for you to enjoy
 - **SQLite Database**: Keeps track of everything, no duplicates, easy to search
-- **Pretty Progress Bars**: Because watching a download bar is better then the noise generated underneath 
+- **Pretty Progress Bars**: Because watching a download bar is better then the noise generated underneath
 - **Good Metadata**: Pulls proper artist/album info and embeds it in the files
 - **Batch Downloads**: Grabs 50 tracks at a time, resumes if something goes wrong
 - **Decent Audio Quality**: High-quality opus files with album art embedded
@@ -43,7 +43,7 @@ Bang Tunes helps you discover new music based on tracks you already love. Starte
 
 - **Learns Your Taste**: Tracks what you skip and what you replay, shuffles accordingly
 - **Terminal Interface**: Clean terminal UI thats fully keyboard driven
-- **Fix Metadata**: Edit track info right in the player when things look wrong
+- **Interactive Metadata Editor**: Standalone tool to search, browse, and edit track information
 - **Plays Everything**: MP3, FLAC, OGG, whatever you throw at it
 - **Smart Deduplication**: Knows when you've moved files around, won't lose track
 - **Everything Connected**: Downloads and player share the same database so no sync headaches
@@ -354,6 +354,30 @@ python bang_tunes.py view
 ```
 
 Shows top artists by track count in a styled table.
+
+### Metadata Editor
+
+Interactive metadata editor for fixing track information:
+
+```bash
+python bang_tunes.py edit-metadata
+```
+
+Features:
+
+- **Search and Browse**: List all tracks or search by artist, title, or album
+- **Interactive Editing**: Edit track metadata with confirmation prompts
+- **File Tag Updates**: Updates both database and audio file tags
+- **Safe Operations**: Shows changes before applying, with confirmation
+- **Keyboard Navigation**: Full keyboard-driven interface
+
+The metadata editor provides:
+
+1. List all tracks in your library
+2. Search tracks by any field
+3. Edit individual track metadata (title, artist, album)
+4. Preview changes before applying
+5. Update both database and file tags simultaneously
 
 ### Player Commands
 

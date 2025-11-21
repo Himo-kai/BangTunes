@@ -237,8 +237,8 @@ theme = "default"
             
             # Launch in the background or foreground based on track_path
             if track_path:
-                # TODO: Add support for launching with specific track
-                subprocess.run([str(binary_path)], cwd=self.player_root, env=env)
+                # Launch with specific track using --play-track argument
+                subprocess.run([str(binary_path), "--play-track", str(track_path)], cwd=self.player_root, env=env)
             else:
                 subprocess.run([str(binary_path)], cwd=self.player_root, env=env)
             
