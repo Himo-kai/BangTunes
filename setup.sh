@@ -155,10 +155,12 @@ echo ""
 echo "Full documentation: Check the README.md file"
 echo "Issues or questions: Open an issue on GitHub"
 
-if [ "$TERMUX" = true ]; then
+if [ "$ENV" = "termux" ]; then
     echo ""
-    echo "Termux Notes:"
-    echo "  - Run 'termux-setup-storage' for file access"
-    echo "  - Install ffmpeg: pkg install ffmpeg"
-    echo "  - Music files will be in ~/Builds/BangTunes/downloads/"
+    echo "Termux (Android) Notes:"
+    echo "  - Run 'termux-setup-storage' for shared storage access"
+    echo "  - Install audio tools: pkg install ffmpeg"
+    echo "  - Music files will be in ~/BangTunes/downloads/"
+    echo "  - Termux uses internal storage, not SD card"
+    echo "  - Access shared storage via ~/storage/shared/"
 fi

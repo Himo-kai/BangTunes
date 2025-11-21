@@ -100,7 +100,7 @@ except ImportError:
 # Debug mode support
 DEBUG_MODE = os.getenv("BANGTUNES_DEBUG", "false").lower() in ("true", "1", "yes")
 def detect_root() -> Path:
-    """Figure out where BangTunes lives - handles various install scenarios"""
+    """Figure out where BangTunes lives - handles various install scenarios including Termux"""
     # Most people will run this from the project directory if they are sane.
     cwd = Path.cwd()
     if (cwd / "bang_tunes.py").exists():
@@ -111,14 +111,30 @@ def detect_root() -> Path:
     if (script_dir / "bang_tunes.py").exists():
         return script_dir
     
+    # Check if we're running in Termux (Android)
+    is_termux = os.getenv("PREFIX") is not None and "com.termux" in os.getenv("PREFIX", "")
+    
     # Check the usual suspects where people might put this
     home = Path.home()
-    candidates = [
-        home / "BangTunes",
-        home / "Builds" / "BangTunes",  # my personal preference
-        home / "Downloads" / "BangTunes",  # common for git clones
-        home / "Music" / "BangTunes",  # makes sense thematically
-    ]
+    candidates = []
+    
+    if is_termux:
+        # Termux-specific paths - uses internal storage, not SD card
+        candidates = [
+            home / "BangTunes",
+            home / "storage" / "shared" / "BangTunes",  # Termux shared storage
+            home / "storage" / "downloads" / "BangTunes",  # Termux downloads
+            home / "storage" / "music" / "BangTunes",  # Termux music folder
+            Path("/data/data/com.termux/files/home/BangTunes"),  # Direct Termux path
+        ]
+    else:
+        # Standard Linux/macOS paths
+        candidates = [
+            home / "BangTunes",
+            home / "Builds" / "BangTunes",
+            home / "Downloads" / "BangTunes",
+            home / "Music" / "BangTunes",
+        ]
     
     for candidate in candidates:
         if candidate.exists() and (candidate / "bang_tunes.py").exists():
@@ -1171,6 +1187,17 @@ def first_run_wizard() -> None:
     console.print("   [cyan]python bang_tunes.py stats[/cyan]            # View library stats")
     console.print("   [cyan]python bang_tunes.py quickplay[/cyan]        # Play music instantly")
     console.print()
+    
+    # Platform-specific notes
+    is_termux = os.getenv("PREFIX") is not None and "com.termux" in os.getenv("PREFIX", "")
+    if is_termux:
+        console.print("[bold]Termux (Android) Notes:[/bold]")
+        console.print("   • Music files stored in Termux internal storage (not SD card)")
+        console.print("   • Run [cyan]termux-setup-storage[/cyan] for shared storage access")
+        console.print("   • Install audio tools: [cyan]pkg install ffmpeg[/cyan]")
+        console.print("   • Access files from other apps via ~/storage/shared/")
+        console.print()
+    
     console.print("[dim]Edit seed.csv to customize your music taste, then run build again![/dim]")
 
 

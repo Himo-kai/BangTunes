@@ -93,10 +93,10 @@ That's it and now you'll have some new music to check out.
 
 Bang Tunes requires Python 3.8+ and works best on Linux/Termux environments.
 
-### Termux Setup
+### Termux Setup (Android)
 
 ```bash
-# Enable storage access
+# Enable shared storage access (for accessing Android's internal storage)
 termux-setup-storage
 
 # Update packages
@@ -108,9 +108,19 @@ pkg install -y python ffmpeg
 # Install Python packages
 pip install -U "yt-dlp[default]" ytmusicapi mutagen rapidfuzz rich
 
-# Create project structure
+# Create project structure in Termux internal storage
 mkdir -p ~/BangTunes/{batches,downloads}
+
+# Optional: Create in shared storage for easier access from other apps
+mkdir -p ~/storage/shared/BangTunes/{batches,downloads}
 ```
+
+**Termux Storage Notes:**
+
+- Termux uses its own internal storage (`~/BangTunes/`) - not SD card
+- Shared storage (`~/storage/shared/`) provides access to Android's internal storage
+- Music files can be accessed by other Android apps when stored in shared storage
+- No root required - works on unrooted devices like Galaxy S23 Ultra
 
 ### Arch Linux Setup
 
