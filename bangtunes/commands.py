@@ -1134,9 +1134,8 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
             
             if panpipe_binary:
                 try:
-                    # Launch PanPipe with the music directory
-                    music_dir = root / "downloads"
-                    subprocess.run([panpipe_binary, str(music_dir)], check=False)
+                    # Launch PanPipe (it will auto-discover music in the current directory)
+                    subprocess.run([panpipe_binary], check=False)
                     return 0
                 except Exception as e:
                     if console:
