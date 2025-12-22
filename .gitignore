@@ -136,7 +136,7 @@ cython_debug/
 
 # Rust
 target/
-Cargo.lock
+# Cargo.lock  # keep this committed for binary apps (reproducible builds)
 **/*.rs.bk
 *.pdb
 

@@ -5,6 +5,7 @@
 mod audio;
 mod behavior;
 mod config;
+mod database;
 mod export;
 mod spotify;
 mod ui;

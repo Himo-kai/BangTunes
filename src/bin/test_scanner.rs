@@ -1,17 +1,41 @@
 use panpipe::audio::MusicScanner;
 use std::path::PathBuf;
 
+fn find_music_directory() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let candidates = vec![
+        home.join("Music"),
+        home.join("Downloads"),
+        home.join("BangTunes").join("downloads"),
+        home.join("Builds").join("BangTunes").join("downloads"),
+        // Add current directory as fallback
+        std::env::current_dir().ok()?.join("downloads"),
+    ];
+    
+    candidates.into_iter().find(|p| p.exists() && p.is_dir())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("🎵 PanPipe Music Scanner Test");
     println!("============================");
     
-    let music_dir = PathBuf::from("/home/himokai/Music");
-    
-    if !music_dir.exists() {
-        println!("❌ Music directory not found: {:?}", music_dir);
-        return Ok(());
-    }
+    let music_dir = match find_music_directory() {
+        Some(dir) => dir,
+        None => {
+            println!("❌ No music directory found. Checked:");
+            if let Some(home) = dirs::home_dir() {
+                println!("   - {}", home.join("Music").display());
+                println!("   - {}", home.join("Downloads").display());
+                println!("   - {}", home.join("BangTunes").join("downloads").display());
+                println!("   - {}", home.join("Builds").join("BangTunes").join("downloads").display());
+            }
+            if let Ok(cwd) = std::env::current_dir() {
+                println!("   - {}", cwd.join("downloads").display());
+            }
+            return Ok(());
+        }
+    };
     
     println!("📁 Scanning music directory: {:?}", music_dir);
     

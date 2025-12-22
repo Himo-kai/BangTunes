@@ -4,17 +4,31 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::sleep;
 
+fn find_music_directory() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let candidates = vec![
+        home.join("Music"),
+        home.join("Downloads"),
+        home.join("BangTunes").join("downloads"),
+        home.join("Builds").join("BangTunes").join("downloads"),
+        std::env::current_dir().ok()?.join("downloads"),
+    ];
+    
+    candidates.into_iter().find(|p| p.exists() && p.is_dir())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!("🎵 PanPipe Audio Playback Test");
     println!("==============================");
     
-    let music_dir = PathBuf::from("/home/himokai/Music");
-    
-    if !music_dir.exists() {
-        println!("❌ Music directory not found: {:?}", music_dir);
-        return Ok(());
-    }
+    let music_dir = match find_music_directory() {
+        Some(dir) => dir,
+        None => {
+            println!("❌ No music directory found. Use the scanner test to see checked locations.");
+            return Ok(());
+        }
+    };
     
     println!("📁 Scanning for music files...");
     let scanner = MusicScanner::new();

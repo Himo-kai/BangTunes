@@ -1,9 +1,11 @@
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
+use tokio::time;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AppEvent {
     // UI Events
     Quit,
@@ -33,21 +35,35 @@ pub enum AppEvent {
     
     // Library Events
     RefreshLibrary,
+    ShowDatabaseStats,
+    ShowTrackInfo,
+    ShowBehaviorStats,
+    GenerateSmartPlaylist,
+    ExportPlaylist,
+    ConnectSpotify,
+    ManagePlaylists,
 }
 
 pub struct EventHandler {
     event_sender: mpsc::UnboundedSender<AppEvent>,
     event_receiver: mpsc::UnboundedReceiver<AppEvent>,
+    should_quit: Arc<AtomicBool>,
 }
 
 impl EventHandler {
     pub fn new() -> Self {
         let (event_sender, event_receiver) = mpsc::unbounded_channel();
+        let should_quit = Arc::new(AtomicBool::new(false));
         
         Self {
             event_sender,
             event_receiver,
+            should_quit,
         }
+    }
+    
+    pub fn quit_flag(&self) -> Arc<AtomicBool> {
+        self.should_quit.clone()
     }
     
     pub fn sender(&self) -> mpsc::UnboundedSender<AppEvent> {
@@ -59,12 +75,16 @@ impl EventHandler {
     }
     
     pub async fn handle_terminal_events(&self) -> Result<()> {
-        loop {
+        let mut ticker = time::interval(Duration::from_millis(100));
+        while !self.should_quit.load(Ordering::Relaxed) {
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
                     Event::Key(key) => {
                         if key.kind == KeyEventKind::Press {
                             if let Some(app_event) = self.key_to_app_event(key) {
+                                if app_event == AppEvent::Quit {
+                                    self.should_quit.store(true, Ordering::Relaxed);
+                                }
                                 let _ = self.event_sender.send(app_event);
                             }
                         }
@@ -76,10 +96,11 @@ impl EventHandler {
                 }
             }
             
-            // Send periodic tick events
+            // Send periodic tick events at a stable cadence
+            ticker.tick().await;
             let _ = self.event_sender.send(AppEvent::Tick);
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
+        Ok(())
     }
     
     fn key_to_app_event(&self, key: KeyEvent) -> Option<AppEvent> {

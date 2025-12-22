@@ -69,25 +69,29 @@ BangTunes is designed as a **standalone tool** with optional extra features:
 - **Basic playback** (`quickplay`): Uses system audio players (ffplay, termux-media-player) - **no additional setup required**
 - **Full playback** (`play`): Integrated TUI player with smart shuffle and behavior tracking - **built-in, requires Rust for compilation**
 
-## Getting Started in 4 Commands
+## Quick Start (3 Commands)
 
-Jump right in with the essential workflow:
+BangTunes automatically detects your platform and guides you through setup:
 
 ```bash
-# 1. Set up virtual environment and install dependencies
-python -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+# 1. Set up virtual environment (IMPORTANT: prevents dependency conflicts)
+python -m venv venv && source venv/bin/activate
 
-# 2. Build some discovery batches from your seed tracks
-python bang_tunes.py build
+# 2. First-time setup (detects platform and installs everything)
+python bang_tunes.py install
 
-# 3. Download your first batch
-python bang_tunes.py download batches/mix_001.csv
-
-# 4. Set up the music player and start listening
-python bang_tunes.py setup-player && python bang_tunes.py play
+# 3. Start discovering music
+python bang_tunes.py build                    # Creates multiple batches (mix_001.csv, mix_002.csv, etc.)
+python bang_tunes.py list-batches             # See all available batches
+python bang_tunes.py download mix_001.csv     # Download first batch (50 songs)
+python bang_tunes.py download mix_002.csv     # Download second batch (50 more songs)
+# ... continue with mix_003.csv, mix_004.csv, etc.
 ```
 
-That's it and now you'll have some new music to check out.
+**Important Notes:**
+- **Always use a virtual environment** to avoid conflicts with system Python packages
+- The `build` command typically creates 3-5 batches of 50 songs each (150-250 total discovered tracks)
+- Make sure to download all batches to get your complete personalized music collection!
 
 ## Installation
 
@@ -103,6 +107,7 @@ cd ~/BangTunes
 ```
 
 This script automatically:
+
 - Installs all system dependencies (python, ffmpeg, rust)
 - Sets up Python virtual environment
 - Installs all Python packages
@@ -123,6 +128,10 @@ pkg update && pkg upgrade -y
 # Install dependencies
 pkg install -y python ffmpeg rust
 
+# Set up virtual environment (IMPORTANT)
+python -m venv venv
+source venv/bin/activate
+
 # Install Python packages
 pip install -U "yt-dlp[default]" ytmusicapi mutagen rapidfuzz rich
 
@@ -140,13 +149,17 @@ mkdir -p ~/storage/shared/BangTunes/{batches,downloads}
 - Music files can be accessed by other Android apps when stored in shared storage
 - No root required - works on unrooted devices like Galaxy S23 Ultra
 
-### Arch Linux Setup
-
-# Install system dependencies
+### Linux/macOS Setup
 
 ```bash
-sudo pacman -S python python-pip ffmpeg
+# Install system dependencies
+sudo pacman -S python python-pip ffmpeg  # Arch Linux
+# sudo apt install python3 python3-pip ffmpeg  # Ubuntu/Debian
+# brew install python ffmpeg  # macOS
 
+# Set up virtual environment (IMPORTANT)
+python -m venv venv
+source venv/bin/activate
 
 # Install Python packages
 pip install -U "yt-dlp[default]" ytmusicapi mutagen rapidfuzz rich
@@ -159,10 +172,36 @@ mkdir -p ~/BangTunes/{batches,downloads}
 
 ```bash
 cd ~/BangTunes
+
+# Set up virtual environment first (IMPORTANT)
+python -m venv venv
+source venv/bin/activate
+
+# Install all dependencies
 pip install -r requirements.txt
 ```
 
 ## Usage
+
+### Quick Start
+
+**Remember to activate your virtual environment first:**
+
+```bash
+# Activate virtual environment (run this every time you use BangTunes)
+source venv/bin/activate
+
+# View all available commands and examples
+python bang_tunes.py --help
+
+# Common workflow: discover → download → enjoy
+python bang_tunes.py build                    # Generate discovery batches (creates multiple files)
+python bang_tunes.py list-batches             # See all generated batches
+python bang_tunes.py download mix_001.csv     # Download first batch (50 songs)
+python bang_tunes.py download mix_002.csv     # Download second batch (50 more songs)
+python bang_tunes.py stats                    # View your library
+python bang_tunes.py quickplay                # Start listening
+```
 
 ### 1. Customize Your Musical DNA (seed.csv)
 
@@ -219,7 +258,18 @@ python bang_tunes.py download batches/mix_001.csv
 
 # Or just the filename if in batches/ directory
 python bang_tunes.py download mix_001.csv
+
+# Control download speed (new feature!)
+python bang_tunes.py download mix_001.csv --speed fast     # Minimal delays
+python bang_tunes.py download mix_001.csv --speed normal   # Balanced (default)
+python bang_tunes.py download mix_001.csv --speed stealth  # Maximum delays to avoid rate limiting
 ```
+
+**Download Speed Modes:**
+
+- **`fast`**: Minimal delays between downloads - use with caution, may trigger rate limiting
+- **`normal`**: Balanced delays - good for most users (default)
+- **`stealth`**: Maximum delays - paranoid mode to avoid any rate limiting issues
 
 ### 4. View Your Library
 
@@ -280,16 +330,61 @@ Once the player launches, use these keyboard commands:
 - `F5` - Refresh library
 - `q` or `Esc` - Quit player
 
-### 7. Sync Library Changes
+### 7. Library Management & Advanced Features
 
-Sync new downloads with the music player:
+**Sync Library Changes:**
 
 ```bash
 # After downloading new batches, sync with player
 python bang_tunes.py sync
+```
+
+**Library Statistics:**
+
+```bash
+# View detailed library statistics
+python bang_tunes.py stats
+```
+
+**Quick Music Playback:**
+
+```bash
+# Instant music playback without full player setup
+python bang_tunes.py quickplay
+```
+
+**Interactive Metadata Editor:**
+
+```bash
+# Search, browse, and edit track information
+python bang_tunes.py edit-metadata
+```
+
+**Library Maintenance:**
+
+```bash
+# Check for library inconsistencies
+python bang_tunes.py rescan
+
+# Fix orphan files and missing entries automatically
+python bang_tunes.py rescan --fix
+
+# Non-interactive mode for scripts (no prompts)
+python bang_tunes.py rescan --fix --yes
+```
+
+**Configuration:**
+All settings can be customized in `bangtunes.toml`:
+
+- Download batch sizes and quality thresholds
+- Default audio format (opus/mp3/flac)
+- Download speed mode (stealth/normal/fast)
+- Player integration settings
 
 # Check integration status
+
 python bang_tunes.py player-status
+
 ```
 
 ## File Organization

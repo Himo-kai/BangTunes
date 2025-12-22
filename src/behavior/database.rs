@@ -207,10 +207,22 @@ impl BehaviorDatabase {
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?;
         
         let skip_positions_json: String = row.get(5)?;
-        let skip_positions: Vec<u64> = serde_json::from_str(&skip_positions_json).unwrap_or_default();
+        let skip_positions: Vec<u64> = match serde_json::from_str(&skip_positions_json) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("Warning: Invalid skip_positions JSON for track {}: {} ({})", track_id_str, skip_positions_json, e);
+                Vec::new()
+            }
+        };
         
         let tags_json: String = row.get(8)?;
-        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+        let tags: Vec<String> = match serde_json::from_str(&tags_json) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("Warning: Invalid tags JSON for track {}: {} ({})", track_id_str, tags_json, e);
+                Vec::new()
+            }
+        };
         
         let last_played_str: Option<String> = row.get(4)?;
         let last_played = last_played_str

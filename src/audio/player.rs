@@ -5,7 +5,20 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use thiserror::Error;
 use tokio::sync::mpsc;
+
+#[derive(Error, Debug)]
+pub enum PlayerError {
+    #[error("Mutex lock poisoned: {0}")]
+    LockPoisoned(String),
+    #[error("Audio device error: {0}")]
+    AudioDevice(#[from] rodio::StreamError),
+    #[error("File error: {0}")]
+    File(#[from] std::io::Error),
+    #[error("Decoder error: {0}")]
+    Decoder(#[from] rodio::decoder::DecoderError),
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaybackState {
@@ -57,6 +70,11 @@ impl AudioPlayer {
         })
     }
     
+    // Helper function for safe mutex locking with better error handling
+    fn safe_lock<'a, T>(mutex: &'a Mutex<T>, context: &str) -> Result<std::sync::MutexGuard<'a, T>, PlayerError> {
+        mutex.lock().map_err(|e| PlayerError::LockPoisoned(format!("{}: {}", context, e)))
+    }
+    
     pub fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<PlayerEvent>) {
         self.event_sender = Some(sender);
     }
@@ -101,26 +119,26 @@ impl AudioPlayer {
         
         // Update state
         {
-            let mut sink_guard = self.sink.lock().unwrap();
+            let mut sink_guard = Self::safe_lock(&self.sink, "sink update")?;
             *sink_guard = Some(sink);
         }
         
         {
-            let mut track_guard = self.current_track.lock().unwrap();
+            let mut track_guard = Self::safe_lock(&self.current_track, "track update")?;
             *track_guard = Some(track.clone());
         }
         
         {
-            let mut state_guard = self.state.lock().unwrap();
+            let mut state_guard = Self::safe_lock(&self.state, "state update")?;
             *state_guard = PlaybackState::Playing;
         }
         
         // Start duration learning if track has no duration
         if track.duration.is_none() {
-            let mut start_time_guard = self.playback_start_time.lock().unwrap();
+            let mut start_time_guard = Self::safe_lock(&self.playback_start_time, "playback start time")?;
             *start_time_guard = Some(std::time::Instant::now());
             
-            let mut learning_track_guard = self.track_for_learning.lock().unwrap();
+            let mut learning_track_guard = Self::safe_lock(&self.track_for_learning, "learning track")?;
             *learning_track_guard = Some(track.clone());
         }
         

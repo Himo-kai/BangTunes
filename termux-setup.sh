@@ -1,5 +1,27 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
+# BANGTUNES_LOCALE_GUARD
+# Try to force a UTF-8 locale so ✓/✗ render correctly.
+# You can override manually before launching if needed.
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+
+
+# BANGTUNES_SYMBOLS_HELPER
+# Use Unicode symbols only when the terminal is UTF-8 (or when forced).
+# Force ASCII fallback with: BANGTUNES_ASCII=1
+_is_utf8() {
+  # locale charmap is the most reliable; fall back to LANG/LC_ALL heuristics
+  if command -v locale >/dev/null 2>&1; then
+    locale charmap 2>/dev/null | grep -qi 'utf-8' && return 0
+  fi
+  echo "${LC_ALL:-${LANG:-}}" | grep -qi 'utf-8'
+}
+
+sym_ok()  { if [ "${BANGTUNES_ASCII:-0}" = "1" ]; then printf '%s' '[OK]';  elif _is_utf8; then printf '%s' '✓'; else printf '%s' '[OK]';  fi; }
+sym_bad() { if [ "${BANGTUNES_ASCII:-0}" = "1" ]; then printf '%s' '[X]';   elif _is_utf8; then printf '%s' '✗'; else printf '%s' '[X]';   fi; }
+
+
 # BangTunes Termux Setup Script
 # Single command setup for Android/Termux users
 
@@ -17,7 +39,7 @@ if [[ ! "$PREFIX" == *"com.termux"* ]]; then
     exit 1
 fi
 
-echo "✓ Termux environment detected"
+echo "$(sym_ok) Termux environment detected"
 
 # Step 1: Update packages and install system dependencies
 echo
@@ -28,9 +50,9 @@ echo "   This may take a few minutes..."
 pkg update -y
 
 # Install required system packages
-pkg install -y python ffmpeg git rust
+pkg install -y python ffmpeg git rust mpv
 
-echo "✓ System packages installed"
+echo "$(sym_ok) System packages installed"
 
 # Step 2: Set up Python environment
 echo
@@ -39,9 +61,9 @@ echo "🐍 Setting up Python environment..."
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
     python -m venv venv
-    echo "✓ Virtual environment created"
+    echo "$(sym_ok) Virtual environment created"
 else
-    echo "✓ Virtual environment already exists"
+    echo "$(sym_ok) Virtual environment already exists"
 fi
 
 # Activate virtual environment
@@ -54,13 +76,13 @@ pip install --upgrade pip
 echo "📚 Installing Python packages..."
 pip install -r requirements.txt
 
-echo "✓ Python dependencies installed"
+echo "$(sym_ok) Python dependencies installed"
 
 # Step 3: Create directory structure
 echo
 echo "📁 Creating project structure..."
 mkdir -p batches downloads
-echo "✓ Directory structure created"
+echo "$(sym_ok) Directory structure created"
 
 # Step 4: Build Rust components (if possible)
 echo
@@ -68,7 +90,7 @@ echo "🦀 Building Rust components..."
 if command -v cargo >/dev/null 2>&1; then
     echo "   Building PanPipe player..."
     if cargo build --release --bin panpipe_interactive; then
-        echo "✓ Rust player built successfully"
+        echo "$(sym_ok) Rust player built successfully"
         RUST_AVAILABLE=true
     else
         echo "⚠️  Rust build failed - advanced player unavailable"
@@ -85,9 +107,16 @@ fi
 echo
 echo "🧪 Testing installation..."
 
+# Test MPV installation
+if command -v mpv >/dev/null 2>&1; then
+    echo "$(sym_ok) MPV media player available"
+else
+    echo "⚠️  MPV not found - advanced player backend unavailable"
+fi
+
 # Test basic functionality
 if python bang_tunes.py --help >/dev/null 2>&1; then
-    echo "✓ BangTunes CLI working"
+    echo "$(sym_ok) BangTunes CLI working"
 else
     echo "❌ BangTunes CLI test failed"
     exit 1
@@ -96,7 +125,7 @@ fi
 # Test YouTube Music connection
 echo "   Testing YouTube Music connection..."
 if python bang_tunes.py build --dry-run >/dev/null 2>&1; then
-    echo "✓ YouTube Music API working"
+    echo "$(sym_ok) YouTube Music API working"
 else
     echo "⚠️  YouTube Music API test failed - check internet connection"
 fi

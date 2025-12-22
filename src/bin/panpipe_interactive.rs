@@ -7,10 +7,10 @@ use crossterm::{
 use fuzzy_matcher::{clangd::ClangdMatcher, FuzzyMatcher};
 use panpipe::{
     audio::{AudioPlayer, MusicScanner, metadata_parser::MetadataParser, scanner::ScanProgress, playlist::PlaylistManager, player::PlayerEvent},
-    behavior::{BehaviorDatabase, BehaviorTracker, PlaybackEvent, SkipReason},
+    behavior::{BehaviorDatabase, BehaviorTracker, PlaybackEvent, SkipReason, weighting::ShuffleWeighting},
     config::Config,
     database::BangTunesDatabase,
-    ui::TerminalManager,
+    ui::{TerminalManager, events::EventHandler},
 };
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
@@ -196,8 +196,10 @@ struct InteractiveApp {
     #[allow(dead_code)] // Used in initialization and throughout app lifecycle
     config: Config,
     terminal: TerminalManager,
+    event_handler: EventHandler,
     audio_player: AudioPlayer,
     behavior_tracker: BehaviorTracker,
+    shuffle_weighting: ShuffleWeighting,
     
     // Music library
     tracks: Vec<panpipe::Track>,
@@ -292,6 +294,7 @@ enum RepeatMode {
 impl InteractiveApp {
     async fn new(config: Config, tracks: Vec<panpipe::Track>) -> Result<Self> {
         let terminal = TerminalManager::new()?;
+        let event_handler = EventHandler::new();
         let mut audio_player = AudioPlayer::new(config.clone().into())?;
         
         // Initialize behavior database and tracker
@@ -300,6 +303,9 @@ impl InteractiveApp {
             behavior_db,
             config.behavior.min_play_time_for_tracking,
         );
+        
+        // Initialize intelligent shuffle weighting
+        let shuffle_weighting = ShuffleWeighting::new(config.behavior.weight_decay_days);
         
         // Create event channel (revert to unbounded for stability)
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -324,8 +330,10 @@ impl InteractiveApp {
         Ok(Self {
             config,
             terminal,
+            event_handler,
             audio_player,
             behavior_tracker,
+            shuffle_weighting,
             tracks,
             filtered_tracks,
             list_state,
@@ -706,6 +714,8 @@ impl InteractiveApp {
         match event {
             InteractiveEvent::Quit => {
                 self.should_quit = true;
+                // Also set the EventHandler quit flag for better event coordination
+                self.event_handler.quit_flag().store(true, std::sync::atomic::Ordering::Relaxed);
             }
             InteractiveEvent::Up => {
                 self.move_selection(-1);
@@ -1193,6 +1203,13 @@ impl InteractiveApp {
         
         let track = self.tracks[track_idx].clone();
         
+        // Check if track is playable before attempting playback
+        if !track.is_playable() {
+            self.set_status(&format!("❌ Track not playable: {}", track.display_title()));
+            debug!("🎵 Track {} is not playable (format unsupported or file missing)", track.display_title());
+            return Ok(());
+        }
+        
         // Record behavior tracking event
         let _ = self.behavior_tracker.handle_event(PlaybackEvent::TrackStarted {
             track_id: track.id,
@@ -1315,9 +1332,41 @@ impl InteractiveApp {
             // Next track in library
             debug!("🎵 Next track in library context");
             if let Some(selected) = self.list_state.selected() {
-                let next_idx = (selected + 1) % self.filtered_tracks.len();
-                self.list_state.select(Some(next_idx));
+                let next_idx = if self.is_shuffled {
+                    // Use intelligent shuffle weighting
+                    debug!("🎵 Using intelligent shuffle weighting for next track");
+                    
+                    // Get track IDs for available tracks
+                    let available_track_ids: Vec<uuid::Uuid> = self.filtered_tracks.iter()
+                        .map(|&idx| self.tracks[idx].id)
+                        .collect();
+                    
+                    // Get recent tracks to avoid (last 5 played tracks)
+                    let recently_played: Vec<uuid::Uuid> = vec![]; // TODO: implement recent track history
+                    
+                    // Get behaviors from behavior tracker (empty for now)
+                    let behaviors = std::collections::HashMap::new(); // TODO: get actual behaviors
+                    
+                    if let Some(next_track_id) = self.shuffle_weighting.select_next_track(
+                        &available_track_ids,
+                        &behaviors,
+                        &recently_played
+                    ) {
+                        // Find the index of this track in filtered_tracks
+                        self.filtered_tracks.iter().position(|&idx| self.tracks[idx].id == next_track_id)
+                            .unwrap_or((selected + 1) % self.filtered_tracks.len())
+                    } else {
+                        // Fallback to simple shuffle if weighting fails
+                        use rand::Rng;
+                        let mut rng = rand::thread_rng();
+                        rng.gen_range(0..self.filtered_tracks.len())
+                    }
+                } else {
+                    // Sequential playback
+                    (selected + 1) % self.filtered_tracks.len()
+                };
                 
+                self.list_state.select(Some(next_idx));
                 let track_idx = self.filtered_tracks[next_idx];
                 self.play_track(track_idx).await?;
             }
@@ -1757,8 +1806,22 @@ impl InteractiveApp {
     // All visualizer methods removed for performance optimization
     
     async fn update_playback_status(&mut self) -> Result<()> {
+        // Sync volume from audio player (useful for external volume changes)
+        self.volume = self.audio_player.get_volume();
         
-
+        // Verify current track synchronization with audio player
+        if let Some(current_audio_track) = self.audio_player.get_current_track() {
+            if let Some(current_idx) = self.current_track_index {
+                if current_idx < self.tracks.len() {
+                    let expected_track = &self.tracks[current_idx];
+                    // Basic sanity check - ensure we're tracking the right track
+                    if current_audio_track.id != expected_track.id {
+                        debug!("⚠️  Track sync mismatch: UI tracking {} but audio playing {}", 
+                               expected_track.id, current_audio_track.id);
+                    }
+                }
+            }
+        }
         
         // Update time tracking if playing
         if self.is_playing {
@@ -1766,15 +1829,16 @@ impl InteractiveApp {
             let elapsed = now.duration_since(self.last_position_update);
             self.current_position += elapsed;
             self.last_position_update = now;
+            
+            // Check if track finished using audio player state
+            if self.audio_player.is_finished() {
+                debug!("🎵 Track finished detected by audio player");
+                self.next_track().await?;
+            }
         }
         
         // Update visualizer data
         // Visualizer removed for performance optimization
-        
-        // NOTE: Removed problematic UI-based completion detection
-        // The is_finished() check was returning true immediately due to sink.empty()
-        // causing premature track advancement and state resets
-        // Track completion will be handled by PlayerEvent::TrackFinished events
         
         Ok(())
     }
@@ -1791,19 +1855,34 @@ impl InteractiveApp {
         let is_shuffled = self.is_shuffled;
         let status_message = self.status_message.clone();
         
+        // Get terminal size for responsive layout decisions
+        let terminal_size = self.terminal.size().unwrap_or(ratatui::layout::Rect::new(0, 0, 80, 24));
+        let is_small_screen = terminal_size.height < 20;
+        
         // Attempt render with error recovery
         match self.terminal.draw(|f| {
             let size = f.area();
             
-            // Create main layout (visualizer removed)
+            // Create responsive layout based on terminal size
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3), // Header
-                    Constraint::Min(6),    // Content (reduced to make room)
-                    Constraint::Length(4), // Player controls
-                    Constraint::Length(3), // Status bar (increased for visibility)
-                ])
+                .constraints(if is_small_screen {
+                    // Compact layout for small screens
+                    [
+                        Constraint::Length(2), // Header (smaller)
+                        Constraint::Min(4),    // Content (minimum viable)
+                        Constraint::Length(3), // Player controls (compact)
+                        Constraint::Length(2), // Status bar (minimal)
+                    ]
+                } else {
+                    // Full layout for normal screens
+                    [
+                        Constraint::Length(3), // Header
+                        Constraint::Min(6),    // Content (reduced to make room)
+                        Constraint::Length(4), // Player controls
+                        Constraint::Length(3), // Status bar (increased for visibility)
+                    ]
+                })
                 .split(size);
             
             // Render header with tabs
@@ -2605,15 +2684,15 @@ impl InteractiveApp {
             PlayerEvent::DurationLearned(learned_track, actual_duration) => {
                 // Find the track in our library and update its duration
                 if let Some(track_index) = self.tracks.iter().position(|t| t.id == learned_track.id) {
-                    // Update the track in our library
-                    self.tracks[track_index].duration = Some(actual_duration);
-                    self.tracks[track_index].metadata.duration_ms = Some(actual_duration.as_millis() as u64);
+                    // Update the track in our library using learn_duration method
+                    self.tracks[track_index].learn_duration(actual_duration);
                     
-                    // Show success message
-                    let duration_str = format!("{}:{:02}", 
-                        actual_duration.as_secs() / 60, 
-                        actual_duration.as_secs() % 60
-                    );
+                    // Show success message using duration_seconds method
+                    let duration_str = if let Some(secs) = self.tracks[track_index].duration_seconds() {
+                        format!("{}:{:02}", secs / 60, secs % 60)
+                    } else {
+                        "Unknown".to_string()
+                    };
                     self.set_status(&format!("📏 Learned duration: {} ({})", 
                         self.format_track_title(&learned_track), 
                         duration_str

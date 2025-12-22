@@ -18,19 +18,19 @@ def test_sanitize_function():
     """Test the sanitize function handles various inputs"""
     # Normal string
     assert sanitize("Normal String") == "Normal String"
-    
+
     # String with special characters
     assert sanitize("Song@#$%^&*()Title") == "Song_________Title"
-    
+
     # String with spaces and valid characters
     assert sanitize("Song - Artist (2023)") == "Song - Artist _2023_"
-    
+
     # Empty string
     assert sanitize("") == ""
-    
+
     # String with only special characters
     assert sanitize("@#$%") == "____"
-    
+
     # String with unicode characters (regex preserves unicode letters)
     result = sanitize("Café Müller")
     # The exact result depends on regex implementation, just check it doesn't crash
@@ -41,7 +41,7 @@ def test_embed_easy_tags_nonexistent_file():
     """Test embed_easy_tags handles non-existent files gracefully"""
     with tempfile.TemporaryDirectory() as tmpdir:
         nonexistent_file = Path(tmpdir) / "nonexistent.mp3"
-        
+
         # Should not crash when file doesn't exist
         try:
             embed_easy_tags(nonexistent_file, "Title", "Artist", "Album", "2023")
@@ -55,7 +55,7 @@ def test_database_connection_error_handling():
     """Test database operations handle connection errors gracefully"""
     # Try to connect to an invalid database path
     invalid_path = "/invalid/path/that/does/not/exist/database.db"
-    
+
     try:
         conn = sqlite3.connect(invalid_path)
         # This might actually succeed (sqlite creates files), so let's try an operation
@@ -76,7 +76,7 @@ def test_empty_input_handling():
     except (TypeError, AttributeError):
         # Expected for None input
         pass
-    
+
     # Test with empty strings
     assert sanitize("") == ""
 
@@ -103,17 +103,19 @@ def test_special_character_edge_cases():
         ("ABC", "ABC"),  # Letters should be preserved
         ("a1b2c3", "a1b2c3"),  # Alphanumeric should be preserved
     ]
-    
+
     for input_str, expected in test_cases:
         result = sanitize(input_str)
-        assert result == expected, f"sanitize('{input_str}') returned '{result}', expected '{expected}'"
+        assert result == expected, (
+            f"sanitize('{input_str}') returned '{result}', expected '{expected}'"
+        )
 
 
 def test_path_handling():
     """Test path-related operations handle edge cases"""
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_path = Path(tmpdir)
-        
+
         # Test with various path types
         paths_to_test = [
             temp_path / "normal_file.txt",
@@ -122,12 +124,12 @@ def test_path_handling():
             temp_path / "file_with_underscores.txt",
             temp_path / "file.with.dots.txt",
         ]
-        
+
         for path in paths_to_test:
             # Create the file
             path.touch()
             assert path.exists()
-            
+
             # Test that the path can be converted to string and back
             path_str = str(path)
             reconstructed_path = Path(path_str)

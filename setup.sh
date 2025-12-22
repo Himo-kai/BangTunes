@@ -133,6 +133,37 @@ chmod +x bang_tunes.py 2>/dev/null || true  # Ignore errors on Windows
 echo "Creating project directories..."
 mkdir -p batches downloads
 
+# Check for MPV (required for advanced player backend)
+echo "Checking for MPV media player..."
+if command -v mpv &> /dev/null; then
+    echo "MPV found - advanced player backend available!"
+else
+    echo "MPV not found - installing for advanced player features..."
+    if [[ "$ENV" == "linux" ]]; then
+        # Try to detect package manager and install MPV
+        if command -v pacman &> /dev/null; then
+            echo "Arch Linux detected - installing MPV..."
+            sudo pacman -S --noconfirm mpv || echo "Failed to install MPV automatically. Run: sudo pacman -S mpv"
+        elif command -v apt &> /dev/null; then
+            echo "Debian/Ubuntu detected - installing MPV..."
+            sudo apt update && sudo apt install -y mpv || echo "Failed to install MPV automatically. Run: sudo apt install mpv"
+        elif command -v dnf &> /dev/null; then
+            echo "Fedora detected - installing MPV..."
+            sudo dnf install -y mpv || echo "Failed to install MPV automatically. Run: sudo dnf install mpv"
+        else
+            echo "Unknown Linux distribution. Please install MPV manually:"
+            echo "  Arch: sudo pacman -S mpv"
+            echo "  Ubuntu/Debian: sudo apt install mpv"
+            echo "  Fedora: sudo dnf install mpv"
+        fi
+    elif [[ "$ENV" == "macos" ]]; then
+        echo "macOS detected - installing MPV via Homebrew..."
+        brew install mpv || echo "Failed to install MPV. Run: brew install mpv"
+    else
+        echo "Please install MPV manually for advanced player features"
+    fi
+fi
+
 # Build integrated player (if Rust is available)
 echo "Building integrated music player..."
 if command -v cargo &> /dev/null; then

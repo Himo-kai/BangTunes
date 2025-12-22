@@ -194,4 +194,9 @@ impl BehaviorTracker {
     pub async fn get_all_behaviors(&self) -> Result<Vec<TrackBehavior>> {
         self.database.get_all_track_behaviors().await
     }
+    
+    pub async fn save_track_metadata(&self, track_id: Uuid, title: &str, artist: &str, album: &str) -> Result<()> {
+        // Note: file_path is required but we don't have it here, so we use a placeholder
+        self.database.save_track_metadata(track_id, "unknown_path", Some(title), Some(artist), Some(album), None, None).await
+    }
 }

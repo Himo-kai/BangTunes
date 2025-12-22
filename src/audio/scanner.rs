@@ -42,7 +42,17 @@ impl MusicScanner {
     /// Create a new scanner with BangTunes database integration
     pub fn with_database() -> Self {
         let database = BangTunesDatabase::find_database().ok();
-        if database.is_none() {
+        if let Some(ref db) = database {
+            // Preload database tracks for performance
+            match db.load_all_tracks() {
+                Ok(tracks) => {
+                    eprintln!("✓ Loaded {} tracks from BangTunes database", tracks.len());
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not load tracks from database: {}", e);
+                }
+            }
+        } else {
             eprintln!("Warning: Could not find BangTunes database, metadata will be limited to file tags");
         }
         
@@ -104,7 +114,43 @@ impl MusicScanner {
             }
         }
         
+        // Deduplicate tracks using content hash comparison
+        self.deduplicate_tracks(&mut all_tracks);
+        
         Ok(all_tracks)
+    }
+    
+    /// Remove duplicate tracks based on content hash, keeping the first occurrence
+    /// Also log moved files (same content, different path)
+    fn deduplicate_tracks(&self, tracks: &mut Vec<Track>) {
+        let mut unique_tracks: Vec<Track> = Vec::new();
+        let mut seen_hashes = std::collections::HashSet::new();
+        
+        for track in tracks.drain(..) {
+            // Compute content hash if not already done
+            let mut track_with_hash = track;
+            if let Ok(hash) = track_with_hash.compute_content_hash() {
+                if seen_hashes.contains(&hash) {
+                    // Find the original track with this hash
+                    if let Some(original) = unique_tracks.iter().find(|t| t.is_same_content(&track_with_hash)) {
+                        if track_with_hash.is_moved_version(original) {
+                            eprintln!("📁 Detected moved file: {} -> {}", 
+                                     original.file_path.display(), 
+                                     track_with_hash.file_path.display());
+                        } else {
+                            eprintln!("🔄 Skipping duplicate: {}", track_with_hash.file_path.display());
+                        }
+                    }
+                    // Skip this duplicate
+                    continue;
+                }
+                seen_hashes.insert(hash);
+            }
+            
+            unique_tracks.push(track_with_hash);
+        }
+        
+        *tracks = unique_tracks;
     }
 
     /// Incremental scan with progress updates via channel for non-blocking UI updates
