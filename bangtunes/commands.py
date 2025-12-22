@@ -20,6 +20,13 @@ from bangtunes.downloads import download_batch, graceful_sigint
 from bangtunes.db import get_db, db_get_all_tracks, db_has_yid, db_add_track
 
 
+def _normalize_speed_mode(mode: str) -> str:
+    """Normalize speed mode for backwards compatibility."""
+    if mode == "slow":
+        return "stealth"
+    return mode
+
+
 def print_banner() -> None:
     """Print the BangTunes ASCII banner."""
     if console:
@@ -195,7 +202,7 @@ def cmd_download(args: Any, root: Path, config: Dict[str, Any]) -> int:
             read_batch_csv_func=read_batch_csv,
             graceful_sigint_func=graceful_sigint,
             audio_format=getattr(args, 'format', 'opus'),
-            download_mode=getattr(args, 'speed', 'normal'),
+            download_mode=_normalize_speed_mode(getattr(args, 'speed', 'normal')),
             debug_mode=False
         )
         

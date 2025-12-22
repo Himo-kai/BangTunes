@@ -44,7 +44,7 @@ Bang Tunes helps you discover new music based on tracks you already love. Starte
 - **Learns Your Taste**: Tracks what you skip and what you replay, shuffles accordingly
 - **Terminal Interface**: Clean terminal UI thats fully keyboard driven
 - **Interactive Metadata Editor**: Standalone tool to search, browse, and edit track information
-- **Plays Everything**: MP3, FLAC, OGG, whatever you throw at it
+- **Plays Everything**: MP3, Opus, M4A, whatever you throw at it
 - **Smart Deduplication**: Knows when you've moved files around, won't lose track
 - **Everything Connected**: Downloads and player share the same database so no sync headaches
 
@@ -377,7 +377,7 @@ python bang_tunes.py rescan --fix --yes
 All settings can be customized in `bangtunes.toml`:
 
 - Download batch sizes and quality thresholds
-- Default audio format (opus/mp3/flac)
+- Default audio format (opus/mp3/m4a)
 - Download speed mode (stealth/normal/fast)
 - Player integration settings
 
@@ -631,7 +631,7 @@ cp download_archive.txt download_archive.backup
 - **Better metadata detection**: Improved artist/album recognition
 - **Better matching**: Improved similarity detection for music discovery
 - **Discovery Report**: Rich batch analysis with genre breakdown and match scores
-- **Audio Format Options**: Support for mp3, flac, and other high-quality formats
+- **Audio Format Options**: Support for mp3, opus, m4a, and other high-quality formats
 
 ## Contributing
 

@@ -40,24 +40,8 @@ except ImportError:
     MutagenFile = None
 
 
-# Download mode configurations
-DOWNLOAD_MODES = {
-    "normal": {
-        "base_sleep": (0.5, 2.0),
-        "max_sleep": (2.0, 5.0),
-        "failure_delay": (3.0, 8.0),
-    },
-    "fast": {
-        "base_sleep": (0.1, 0.5),
-        "max_sleep": (0.5, 1.5),
-        "failure_delay": (1.0, 3.0),
-    },
-    "slow": {
-        "base_sleep": (2.0, 5.0),
-        "max_sleep": (5.0, 10.0),
-        "failure_delay": (10.0, 20.0),
-    },
-}
+# Import shared constants to prevent configuration drift
+from bangtunes.constants import DOWNLOAD_MODES
 
 
 @contextmanager

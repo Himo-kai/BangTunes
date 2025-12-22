@@ -216,6 +216,7 @@ struct InteractiveApp {
     is_playing: bool,
     is_shuffled: bool,
     repeat_mode: RepeatMode,
+    autoplay: bool,
     
     // Time tracking
     current_position: Duration,
@@ -344,6 +345,7 @@ impl InteractiveApp {
             is_playing: false,
             is_shuffled: false,
             repeat_mode: RepeatMode::Off,
+            autoplay: true,  // Default to autoplay enabled
             current_position: Duration::from_secs(0),
             total_duration: None,
             last_position_update: Instant::now(),
@@ -545,6 +547,7 @@ impl InteractiveApp {
             (KeyCode::Char('+'), KeyModifiers::NONE) | (KeyCode::Char('='), KeyModifiers::NONE) => Some(InteractiveEvent::VolumeUp),
             (KeyCode::Char('-'), KeyModifiers::NONE) => Some(InteractiveEvent::VolumeDown),
             (KeyCode::Char('z'), KeyModifiers::NONE) => Some(InteractiveEvent::ToggleShuffle),
+            (KeyCode::Char('A'), KeyModifiers::NONE) => Some(InteractiveEvent::ToggleAutoplay),
 
             (KeyCode::Up, _) => Some(InteractiveEvent::Up),
             (KeyCode::Down, _) => Some(InteractiveEvent::Down),
@@ -698,6 +701,7 @@ impl InteractiveApp {
             (InteractiveEvent::PreviousTrack, _, EditMode::None) => true,
             (InteractiveEvent::Stop, _, EditMode::None) => true,
             (InteractiveEvent::ToggleShuffle, _, EditMode::None) => true,
+            (InteractiveEvent::ToggleAutoplay, _, EditMode::None) => true,
             (InteractiveEvent::VolumeUp, _, EditMode::None) => true,
             (InteractiveEvent::VolumeDown, _, EditMode::None) => true,
             
@@ -838,6 +842,14 @@ impl InteractiveApp {
                     self.set_status("🔀 Shuffle: On");
                 } else {
                     self.set_status("🔀 Shuffle: Off");
+                }
+            }
+            InteractiveEvent::ToggleAutoplay => {
+                self.autoplay = !self.autoplay;
+                if self.autoplay {
+                    self.set_status("🔄 Autoplay: On - tracks will advance automatically");
+                } else {
+                    self.set_status("⏸️ Autoplay: Off - tracks will stop after finishing");
                 }
             }
             InteractiveEvent::Tick => {
@@ -2676,10 +2688,15 @@ impl InteractiveApp {
                 self.set_status(&format!("▶️ Playing: {}", self.format_track_title(&track)));
             }
             PlayerEvent::TrackFinished(track) => {
-                self.set_status(&format!("🔧 DEBUG: TrackFinished set is_playing=false for {}", self.format_track_title(&track)));
-                // Just stop playing - don't auto-advance or reset track index
-                // This preserves the current track display and progress bar state
-                self.is_playing = false;
+                if self.autoplay {
+                    self.set_status(&format!("🔧 DEBUG: TrackFinished - auto-advancing for {}", self.format_track_title(&track)));
+                    self.next_track().await?;
+                } else {
+                    self.set_status(&format!("🔧 DEBUG: TrackFinished set is_playing=false for {}", self.format_track_title(&track)));
+                    // Just stop playing - don't auto-advance or reset track index
+                    // This preserves the current track display and progress bar state
+                    self.is_playing = false;
+                }
             }
             PlayerEvent::DurationLearned(learned_track, actual_duration) => {
                 // Find the track in our library and update its duration
@@ -2821,6 +2838,7 @@ enum InteractiveEvent {
     VolumeDown,
     ToggleRepeat,
     ToggleShuffle,
+    ToggleAutoplay,
     // Tab navigation
     SwitchToLibrary,
     SwitchToPlaylists,

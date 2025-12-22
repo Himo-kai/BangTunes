@@ -16,6 +16,9 @@ try:
 except ImportError:
     console = None
 
+# Import shared constants to prevent configuration drift
+from bangtunes.constants import VALID_FORMATS, VALID_SPEED_MODES, DEFAULT_FORMAT, DEFAULT_SPEED_MODE
+
 # Import all the modules we need
 from bangtunes.env import get_root
 from bangtunes.config import load_config
@@ -75,15 +78,17 @@ Examples:
     d.add_argument("batch_csv", help="Batch CSV file to download")
     d.add_argument(
         "--format",
-        default="opus",
-        choices=["opus", "mp3", "m4a"],
-        help="Audio format (default: opus)",
+        default=DEFAULT_FORMAT,
+        choices=VALID_FORMATS,
+        help=f"Audio format (default: {DEFAULT_FORMAT})",
     )
+    # Backwards compat: old CLI used 'slow' for what is now called 'stealth'
+    speed_choices = sorted(set(["slow"] + list(VALID_SPEED_MODES)))
     d.add_argument(
         "--speed",
-        default="normal",
-        choices=["slow", "normal", "fast"],
-        help="Download speed mode (default: normal)",
+        default=DEFAULT_SPEED_MODE,
+        choices=speed_choices,
+        help=f"Download speed mode (default: {DEFAULT_SPEED_MODE})",
     )
 
     # Other commands

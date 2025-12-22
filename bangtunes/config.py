@@ -17,6 +17,16 @@ except ImportError:
         tomllib = None
 
 
+def _deep_merge(dst: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge src into dst recursively (src wins)."""
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _deep_merge(dst[k], v)  # type: ignore[index]
+        else:
+            dst[k] = v
+    return dst
+
+
 def load_config(root: Path) -> Dict[str, Any]:
     """
     Load configuration from TOML file if available.
@@ -41,7 +51,9 @@ def load_config(root: Path) -> Dict[str, Any]:
         if p.exists():
             with p.open("rb") as f:
                 try:
-                    return tomllib.load(f) or {}
+                    raw = tomllib.load(f) or {}
+                    defaults = get_config_defaults()
+                    return _deep_merge(defaults, raw)
                 except Exception as e:
                     if debug_mode:
                         # Import here to avoid circular dependency
@@ -54,29 +66,15 @@ def load_config(root: Path) -> Dict[str, Any]:
                             )
                         except ImportError:
                             print(f"Config parse failed for {p}: {e}")
-                    return {}
-    return {}
+                    return get_config_defaults()
+    return get_config_defaults()
 
 
 def get_config_defaults() -> Dict[str, Any]:
     """Get default configuration values."""
-    return {
-        "root": "",  # Will be filled by caller
-        "music_directories": [],
-        "behavior": {
-            "min_play_time_for_tracking": 30,
-            "weight_decay_days": 30,
-        },
-        "download": {
-            "quality": "best",
-            "format": "mp3",
-        },
-        "player": {
-            "volume": 0.7,
-            "shuffle": False,
-            "repeat": False,
-        },
-    }
+    # Import here to avoid circular imports
+    from bangtunes.constants import DEFAULT_CONFIG
+    return DEFAULT_CONFIG.copy()
 
 
 def save_config(root: Path, config: Dict[str, Any]) -> None:
