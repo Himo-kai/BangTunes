@@ -11,7 +11,7 @@ import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, Generator
+from typing import Any, Dict, Generator, List, Optional, Union, Type, Callable
 
 try:
     from rich.console import Console
@@ -23,8 +23,8 @@ try:
         TimeRemainingColumn,
     )
 
-    console: Console | None = Console()
-    ProgressType = Progress
+    console: Optional[Console] = Console()
+    ProgressType: Optional[Type[Progress]] = Progress
 except ImportError:
     console = None
     ProgressType = None
@@ -128,8 +128,8 @@ def run_ytdlp_audio(
     max_sleep = random.uniform(*mode_config["max_sleep"])
 
     # Make yt-dlp path resilient
-    ytdlp_path: str | Path = root / "venv" / "bin" / "yt-dlp"
-    if not ytdlp_path.exists():
+    ytdlp_path: Union[str, Path] = root / "venv" / "bin" / "yt-dlp"
+    if isinstance(ytdlp_path, Path) and not ytdlp_path.exists():
         ytdlp_fallback = shutil.which("yt-dlp")
         if ytdlp_fallback:
             ytdlp_path = ytdlp_fallback
@@ -291,7 +291,7 @@ def download_batch(
     failures = 0
     failed_tracks: list[dict[str, str]] = []  # Track failed downloads for summary
 
-    if ProgressType and console:
+    if ProgressType is not None and console:
         with (
             graceful_sigint_func() as flag,
             Progress(
@@ -370,23 +370,23 @@ def download_batch(
 
 
 def _download_batch_items(
-    items,
-    flag,
-    task,
-    progress,
-    ytm,
-    db_conn,
-    db_has_yid_func,
-    db_add_track_func,
-    temp_dir,
-    final_root,
-    root,
-    audio_format,
-    download_mode,
-    debug_mode,
-    failures,
-    failed_tracks,
-):
+    items: List[Dict[str, Any]],
+    flag: Dict[str, bool],
+    task: Any,
+    progress: Any,
+    ytm: Any,
+    db_conn: Any,
+    db_has_yid_func: Callable,
+    db_add_track_func: Callable,
+    temp_dir: Path,
+    final_root: Path,
+    root: Path,
+    audio_format: str,
+    download_mode: str,
+    debug_mode: bool,
+    failures: int,
+    failed_tracks: List[Dict[str, str]],
+) -> int:
     """Internal helper for downloading batch items."""
     for row in items:
         if flag["hit"]:
@@ -445,10 +445,18 @@ def _download_batch_items(
         if progress:
             progress.advance(task)
 
+    return failures
+
 
 def _process_successful_download(
-    tmp, row, ytm, final_root, db_conn, db_add_track_func, yid
-):
+    tmp: Path,
+    row: Dict[str, Any],
+    ytm: Any,
+    final_root: Path,
+    db_conn: Any,
+    db_add_track_func: Any,
+    yid: str,
+) -> None:
     """Process a successful download - organize, tag, and add to database."""
     title = row.get("title", "Unknown Title")
     artist = row.get("artist", "Unknown Artist")

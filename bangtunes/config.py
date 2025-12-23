@@ -74,6 +74,7 @@ def get_config_defaults() -> Dict[str, Any]:
     """Get default configuration values."""
     # Import here to avoid circular imports
     from bangtunes.constants import DEFAULT_CONFIG
+
     return DEFAULT_CONFIG.copy()
 
 

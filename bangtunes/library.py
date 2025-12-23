@@ -8,12 +8,12 @@ import csv
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Optional, Any
 
 try:
     from rich.console import Console
 
-    console = Console()
+    console: Optional[Console] = Console()
 except ImportError:
     console = None
 

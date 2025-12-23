@@ -11,10 +11,11 @@ import sys
 # Add the parent directory to the path so we can import bang_tunes
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bang_tunes import sanitize, embed_easy_tags
+from bangtunes.db import sanitize
+from bangtunes.downloads import embed_easy_tags
 
 
-def test_sanitize_function():
+def test_sanitize_function() -> None:
     """Test the sanitize function handles various inputs"""
     # Normal string
     assert sanitize("Normal String") == "Normal String"
@@ -37,7 +38,7 @@ def test_sanitize_function():
     assert isinstance(result, str)
 
 
-def test_embed_easy_tags_nonexistent_file():
+def test_embed_easy_tags_nonexistent_file() -> None:
     """Test embed_easy_tags handles non-existent files gracefully"""
     with tempfile.TemporaryDirectory() as tmpdir:
         nonexistent_file = Path(tmpdir) / "nonexistent.mp3"
@@ -51,7 +52,7 @@ def test_embed_easy_tags_nonexistent_file():
             assert "No such file" in str(e) or "cannot load" in str(e).lower()
 
 
-def test_database_connection_error_handling():
+def test_database_connection_error_handling() -> None:
     """Test database operations handle connection errors gracefully"""
     # Try to connect to an invalid database path
     invalid_path = "/invalid/path/that/does/not/exist/database.db"
@@ -66,11 +67,11 @@ def test_database_connection_error_handling():
         pass
 
 
-def test_empty_input_handling():
+def test_empty_input_handling() -> None:
     """Test functions handle empty/None inputs gracefully"""
     # Test sanitize with None (should not crash)
     try:
-        result = sanitize(None)
+        result = sanitize(None)  # type: ignore
         # If it doesn't crash, check the result is reasonable
         assert result is not None
     except (TypeError, AttributeError):
@@ -81,7 +82,7 @@ def test_empty_input_handling():
     assert sanitize("") == ""
 
 
-def test_large_input_handling():
+def test_large_input_handling() -> None:
     """Test functions handle very large inputs"""
     # Very long string
     long_string = "A" * 10000
@@ -90,7 +91,7 @@ def test_large_input_handling():
     assert result == long_string  # All A's should be preserved
 
 
-def test_special_character_edge_cases():
+def test_special_character_edge_cases() -> None:
     """Test edge cases with special characters"""
     # Test various unicode and special characters
     test_cases = [
@@ -111,7 +112,7 @@ def test_special_character_edge_cases():
         )
 
 
-def test_path_handling():
+def test_path_handling() -> None:
     """Test path-related operations handle edge cases"""
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_path = Path(tmpdir)

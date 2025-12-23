@@ -18,7 +18,13 @@ except ImportError:
     console = None
 
 # Import the modular functions we actually use
-from bangtunes.library import list_batches, read_seed, build_pool_from_seed, write_batches, read_batch_csv
+from bangtunes.library import (
+    list_batches,
+    read_seed,
+    build_pool_from_seed,
+    write_batches,
+    read_batch_csv,
+)
 from bangtunes.downloads import download_batch, graceful_sigint
 from bangtunes.db import get_db, db_get_all_tracks, db_has_yid, db_add_track
 
@@ -101,54 +107,58 @@ def cmd_build(args: Any, root: Path, config: Dict[str, Any]) -> int:
             console.print(f"[dim]Reading seed file: {seed_path}[/dim]")
         else:
             print(f"Reading seed file: {seed_path}")
-        
+
         seed_rows = read_seed(seed_path)
-        
+
         # Build pool from seed
         if console:
             console.print("[dim]Building discovery pool from seed tracks...[/dim]")
         else:
             print("Building discovery pool from seed tracks...")
-        
+
         pool = build_pool_from_seed(
-            seed_rows, 
-            min_score=getattr(args, 'min_score', 60),
-            cc_only=getattr(args, 'cc_only', False)
+            seed_rows,
+            min_score=getattr(args, "min_score", 60),
+            cc_only=getattr(args, "cc_only", False),
         )
-        
+
         if not pool:
             if console:
                 console.print("[red]No tracks found in discovery pool[/red]")
             else:
                 print("No tracks found in discovery pool")
             return 1
-        
+
         # Write batches
         batch_dir = root / "batches"
         if console:
             console.print(f"[dim]Writing batches to: {batch_dir}[/dim]")
         else:
             print(f"Writing batches to: {batch_dir}")
-        
+
         batch_files = write_batches(
             pool,
             batch_dir,
-            prefix=getattr(args, 'prefix', 'mix'),
-            size=getattr(args, 'size', 50)
+            prefix=getattr(args, "prefix", "mix"),
+            size=getattr(args, "size", 50),
         )
-        
+
         # Show results
         if console:
-            console.print(f"[green]✓ Created {len(batch_files)} batch files with {len(pool)} total tracks[/green]")
+            console.print(
+                f"[green]✓ Created {len(batch_files)} batch files with {len(pool)} total tracks[/green]"
+            )
             for batch_file in batch_files:
                 console.print(f"[dim]  {batch_file.name}[/dim]")
         else:
-            print(f"✓ Created {len(batch_files)} batch files with {len(pool)} total tracks")
+            print(
+                f"✓ Created {len(batch_files)} batch files with {len(pool)} total tracks"
+            )
             for batch_file in batch_files:
                 print(f"  {batch_file.name}")
-        
+
         return 0
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Build failed: {e}[/red]")
@@ -161,39 +171,39 @@ def cmd_download(args: Any, root: Path, config: Dict[str, Any]) -> int:
     """Handle download command."""
     try:
         # Get batch file path
-        batch_csv = getattr(args, 'batch_csv', None)
+        batch_csv = getattr(args, "batch_csv", None)
         if not batch_csv:
             if console:
                 console.print("[red]No batch CSV file specified[/red]")
             else:
                 print("No batch CSV file specified")
             return 1
-        
+
         batch_path = Path(batch_csv)
         if not batch_path.is_absolute():
             batch_path = root / "batches" / batch_csv
-        
+
         if not batch_path.exists():
             if console:
                 console.print(f"[red]Batch file not found: {batch_path}[/red]")
             else:
                 print(f"Batch file not found: {batch_path}")
             return 1
-        
+
         # Get database connection
         db_path = root / "library.db"
         db_conn = get_db(db_path)
-        
+
         # Set up paths
         batch_dir = root / "batches"
         dl_root = root / "downloads"
-        
+
         # Download the batch
         if console:
             console.print(f"[dim]Downloading batch: {batch_path.name}[/dim]")
         else:
             print(f"Downloading batch: {batch_path.name}")
-        
+
         download_batch(
             batch_path=batch_path,
             batch_dir=batch_dir,
@@ -204,18 +214,18 @@ def cmd_download(args: Any, root: Path, config: Dict[str, Any]) -> int:
             db_add_track_func=db_add_track,
             read_batch_csv_func=read_batch_csv,
             graceful_sigint_func=graceful_sigint,
-            audio_format=getattr(args, 'format', 'opus'),
-            download_mode=_normalize_speed_mode(getattr(args, 'speed', 'normal')),
-            debug_mode=False
+            audio_format=getattr(args, "format", "opus"),
+            download_mode=_normalize_speed_mode(getattr(args, "speed", "normal")),
+            debug_mode=False,
         )
-        
+
         if console:
             console.print("[green]✓ Download batch completed[/green]")
         else:
             print("✓ Download batch completed")
-        
+
         return 0
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Download failed: {e}[/red]")
@@ -230,49 +240,52 @@ def cmd_view(args: Any, root: Path, config: Dict[str, Any]) -> int:
         # Get database connection
         db_path = root / "library.db"
         db_conn = get_db(db_path)
-        
+
         # Get all tracks for statistics
         tracks = db_get_all_tracks(db_conn)
-        
+
         if not tracks:
             if console:
                 console.print("[yellow]No tracks found in library[/yellow]")
-                console.print("[dim]Run 'python bang_tunes.py build' to discover music[/dim]")
+                console.print(
+                    "[dim]Run 'python bang_tunes.py build' to discover music[/dim]"
+                )
             else:
                 print("No tracks found in library")
                 print("Run 'python bang_tunes.py build' to discover music")
             return 0
-        
+
         # Count tracks by artist
-        artist_counts = {}
+        artist_counts: Dict[str, int] = {}
         for track in tracks:
             artist = track.get("artist", "Unknown Artist")
             artist_counts[artist] = artist_counts.get(artist, 0) + 1
-        
+
         # Sort by track count (descending)
         sorted_artists = sorted(artist_counts.items(), key=lambda x: x[1], reverse=True)
-        
+
         if console:
             console.print("\n[bold]Bang Tunes — Top Artists[/bold]")
-            
+
             # Create table
             from rich.table import Table
+
             table = Table()
             table.add_column("Artist", style="cyan")
             table.add_column("# Tracks", justify="right", style="magenta")
-            
+
             for artist, count in sorted_artists:
                 table.add_row(artist, str(count))
-            
+
             console.print(table)
         else:
             print("\nBang Tunes — Top Artists")
             print("-" * 50)
             for artist, count in sorted_artists:
                 print(f"{artist:<40} {count:>8}")
-        
+
         return 0
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Error viewing library: {e}[/red]")
@@ -287,39 +300,44 @@ def cmd_list_batches(args: Any, root: Path, config: Dict[str, Any]) -> int:
     if not batch_dir.exists():
         if console:
             console.print("[yellow]No batches directory found[/yellow]")
-            console.print("[dim]Run 'python bang_tunes.py build' to create batches[/dim]")
+            console.print(
+                "[dim]Run 'python bang_tunes.py build' to create batches[/dim]"
+            )
         else:
             print("No batches directory found")
             print("Run 'python bang_tunes.py build' to create batches")
         return 0
-    
+
     batches = list_batches(batch_dir)
     if not batches:
         if console:
             console.print("[yellow]No batch files found[/yellow]")
-            console.print("[dim]Run 'python bang_tunes.py build' to create batches[/dim]")
+            console.print(
+                "[dim]Run 'python bang_tunes.py build' to create batches[/dim]"
+            )
         else:
             print("No batch files found")
             print("Run 'python bang_tunes.py build' to create batches")
         return 0
-    
+
     if console:
         console.print("\n[bold]Available Batch Files[/bold]")
         from rich.table import Table
+
         table = Table()
         table.add_column("Batch File", style="cyan")
         table.add_column("Tracks", justify="right", style="magenta")
-        
+
         for name, count in batches:
             table.add_row(name, str(count))
-        
+
         console.print(table)
     else:
         print("\nAvailable Batch Files")
         print("-" * 40)
         for name, count in batches:
             print(f"{name:<30} {count:>8}")
-    
+
     return 0
 
 
@@ -332,40 +350,40 @@ def cmd_install(args: Any, root: Path, config: Dict[str, Any]) -> int:
         else:
             print("🎵 BangTunes Setup Wizard")
             print("=" * 30)
-        
+
         # Check and create directories
         directories = [
             root / "batches",
-            root / "downloads", 
-            root / "downloads" / "temp"
+            root / "downloads",
+            root / "downloads" / "temp",
         ]
-        
+
         if console:
             console.print("[dim]Creating directory structure...[/dim]")
         else:
             print("Creating directory structure...")
-        
+
         for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
             if console:
                 console.print(f"[green]✓[/green] {directory}")
             else:
                 print(f"✓ {directory}")
-        
+
         # Initialize database
         if console:
             console.print("\n[dim]Initializing database...[/dim]")
         else:
             print("\nInitializing database...")
-        
+
         db_path = root / "library.db"
         get_db(db_path)  # Initialize database
-        
+
         if console:
             console.print(f"[green]✓[/green] Database initialized: {db_path}")
         else:
             print(f"✓ Database initialized: {db_path}")
-        
+
         # Check for seed.csv
         seed_path = root / "seed.csv"
         if not seed_path.exists():
@@ -375,7 +393,7 @@ def cmd_install(args: Any, root: Path, config: Dict[str, Any]) -> int:
             else:
                 print("\n⚠️  No seed.csv found")
                 print("Creating example seed.csv...")
-            
+
             # Create example seed file
             example_seed = """title,artist,notes
 Bohemian Rhapsody,Queen,Classic rock anthem
@@ -383,12 +401,14 @@ Hotel California,Eagles,Iconic guitar solo
 Stairway to Heaven,Led Zeppelin,Epic rock ballad
 Imagine,John Lennon,Peaceful message
 Sweet Child O' Mine,Guns N' Roses,Great guitar work"""
-            
+
             seed_path.write_text(example_seed)
-            
+
             if console:
                 console.print("[green]✓[/green] Example seed.csv created")
-                console.print("[dim]Edit seed.csv to add your favorite tracks for discovery[/dim]")
+                console.print(
+                    "[dim]Edit seed.csv to add your favorite tracks for discovery[/dim]"
+                )
             else:
                 print("✓ Example seed.csv created")
                 print("Edit seed.csv to add your favorite tracks for discovery")
@@ -397,16 +417,16 @@ Sweet Child O' Mine,Guns N' Roses,Great guitar work"""
                 console.print("\n[green]✓[/green] Found existing seed.csv")
             else:
                 print("\n✓ Found existing seed.csv")
-        
+
         # Check dependencies
         if console:
             console.print("\n[dim]Checking dependencies...[/dim]")
         else:
             print("\nChecking dependencies...")
-        
+
         deps_ok = True
         required_deps = ["ytmusicapi", "rapidfuzz", "mutagen", "rich"]
-        
+
         for dep in required_deps:
             try:
                 __import__(dep)
@@ -420,9 +440,10 @@ Sweet Child O' Mine,Guns N' Roses,Great guitar work"""
                 else:
                     print(f"✗ {dep} (missing)")
                 deps_ok = False
-        
+
         # Check for yt-dlp
         import shutil
+
         if shutil.which("yt-dlp"):
             if console:
                 console.print("[green]✓[/green] yt-dlp")
@@ -434,20 +455,26 @@ Sweet Child O' Mine,Guns N' Roses,Great guitar work"""
             else:
                 print("✗ yt-dlp (missing)")
             deps_ok = False
-        
+
         # Summary
         if console:
             console.print()
             if deps_ok:
-                console.print("[green]🎉 Setup complete! BangTunes is ready to use.[/green]")
+                console.print(
+                    "[green]🎉 Setup complete! BangTunes is ready to use.[/green]"
+                )
                 console.print()
                 console.print("[bold]Next steps:[/bold]")
                 console.print("1. Edit seed.csv with your favorite tracks")
                 console.print("2. Run: [cyan]python bang_tunes.py build[/cyan]")
-                console.print("3. Run: [cyan]python bang_tunes.py download mix_001.csv[/cyan]")
+                console.print(
+                    "3. Run: [cyan]python bang_tunes.py download mix_001.csv[/cyan]"
+                )
                 console.print("4. Run: [cyan]python bang_tunes.py stats[/cyan]")
             else:
-                console.print("[yellow]⚠️  Setup incomplete - missing dependencies[/yellow]")
+                console.print(
+                    "[yellow]⚠️  Setup incomplete - missing dependencies[/yellow]"
+                )
                 console.print("Run: [cyan]pip install -r requirements.txt[/cyan]")
         else:
             print()
@@ -462,9 +489,9 @@ Sweet Child O' Mine,Guns N' Roses,Great guitar work"""
             else:
                 print("⚠️  Setup incomplete - missing dependencies")
                 print("Run: pip install -r requirements.txt")
-        
+
         return 0 if deps_ok else 1
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Install failed: {e}[/red]")
@@ -482,21 +509,21 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
         else:
             print("🩺 BangTunes System Health Check")
             print("=" * 35)
-        
+
         issues = []
-        
+
         # Check directory structure
         if console:
             console.print("[dim]Checking directory structure...[/dim]")
         else:
             print("Checking directory structure...")
-        
+
         required_dirs = [
             root / "batches",
             root / "downloads",
-            root / "downloads" / "temp"
+            root / "downloads" / "temp",
         ]
-        
+
         for directory in required_dirs:
             if directory.exists():
                 if console:
@@ -509,20 +536,22 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 else:
                     print(f"✗ {directory} (missing)")
                 issues.append(f"Missing directory: {directory}")
-        
+
         # Check database
         if console:
             console.print("\n[dim]Checking database...[/dim]")
         else:
             print("\nChecking database...")
-        
+
         db_path = root / "library.db"
         if db_path.exists():
             try:
                 db_conn = get_db(db_path)
                 tracks = db_get_all_tracks(db_conn)
                 if console:
-                    console.print(f"[green]✓[/green] Database accessible ({len(tracks)} tracks)")
+                    console.print(
+                        f"[green]✓[/green] Database accessible ({len(tracks)} tracks)"
+                    )
                 else:
                     print(f"✓ Database accessible ({len(tracks)} tracks)")
             except Exception as e:
@@ -533,23 +562,27 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 issues.append(f"Database error: {e}")
         else:
             if console:
-                console.print("[yellow]⚠️[/yellow] Database not found (run install first)")
+                console.print(
+                    "[yellow]⚠️[/yellow] Database not found (run install first)"
+                )
             else:
                 print("⚠️ Database not found (run install first)")
             issues.append("Database not initialized")
-        
+
         # Check seed file
         if console:
             console.print("\n[dim]Checking seed file...[/dim]")
         else:
             print("\nChecking seed file...")
-        
+
         seed_path = root / "seed.csv"
         if seed_path.exists():
             try:
                 seed_rows = read_seed(seed_path)
                 if console:
-                    console.print(f"[green]✓[/green] seed.csv valid ({len(seed_rows)} tracks)")
+                    console.print(
+                        f"[green]✓[/green] seed.csv valid ({len(seed_rows)} tracks)"
+                    )
                 else:
                     print(f"✓ seed.csv valid ({len(seed_rows)} tracks)")
             except Exception as e:
@@ -564,20 +597,20 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
             else:
                 print("⚠️ seed.csv not found")
             issues.append("No seed file found")
-        
+
         # Check dependencies
         if console:
             console.print("\n[dim]Checking Python dependencies...[/dim]")
         else:
             print("\nChecking Python dependencies...")
-        
+
         required_deps = {
             "ytmusicapi": "YouTube Music API",
             "rapidfuzz": "Fuzzy string matching",
             "mutagen": "Audio metadata",
-            "rich": "Terminal formatting"
+            "rich": "Terminal formatting",
         }
-        
+
         for dep, desc in required_deps.items():
             try:
                 __import__(dep)
@@ -591,21 +624,22 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 else:
                     print(f"✗ {dep} ({desc}) - missing")
                 issues.append(f"Missing dependency: {dep}")
-        
+
         # Check external tools
         if console:
             console.print("\n[dim]Checking external tools...[/dim]")
         else:
             print("\nChecking external tools...")
-        
+
         import shutil
+
         external_tools = {
             "yt-dlp": "Audio downloader (required)",
             "ffplay": "Audio player (optional)",
             "mpv": "Audio player (optional)",
-            "vlc": "Audio player (optional)"
+            "vlc": "Audio player (optional)",
         }
-        
+
         for tool, desc in external_tools.items():
             if shutil.which(tool):
                 if console:
@@ -624,13 +658,13 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
                         console.print(f"[yellow]⚠️[/yellow] {tool} ({desc}) - not found")
                     else:
                         print(f"⚠️ {tool} ({desc}) - not found")
-        
+
         # Check batch files
         if console:
             console.print("\n[dim]Checking batch files...[/dim]")
         else:
             print("\nChecking batch files...")
-        
+
         batch_dir = root / "batches"
         if batch_dir.exists():
             batches = list_batches(batch_dir)
@@ -644,18 +678,22 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     console.print("[yellow]⚠️[/yellow] No batch files found")
                 else:
                     print("⚠️ No batch files found")
-        
+
         # Summary
         if console:
             console.print()
             if not issues:
-                console.print("[green]🎉 All systems healthy! BangTunes is ready to rock.[/green]")
+                console.print(
+                    "[green]🎉 All systems healthy! BangTunes is ready to rock.[/green]"
+                )
             else:
                 console.print(f"[yellow]⚠️  Found {len(issues)} issues:[/yellow]")
                 for i, issue in enumerate(issues, 1):
                     console.print(f"[red]{i}.[/red] {issue}")
                 console.print()
-                console.print("[dim]💡 Run 'python bang_tunes.py install' to fix setup issues[/dim]")
+                console.print(
+                    "[dim]💡 Run 'python bang_tunes.py install' to fix setup issues[/dim]"
+                )
         else:
             print()
             if not issues:
@@ -666,9 +704,9 @@ def cmd_doctor(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     print(f"{i}. {issue}")
                 print()
                 print("💡 Run 'python bang_tunes.py install' to fix setup issues")
-        
+
         return 0 if not issues else 1
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Doctor check failed: {e}[/red]")
@@ -683,59 +721,68 @@ def cmd_stats(args: Any, root: Path, config: Dict[str, Any]) -> int:
         # Get database connection
         db_path = root / "library.db"
         db_conn = get_db(db_path)
-        
+
         # Get all tracks for statistics
         tracks = db_get_all_tracks(db_conn)
-        
+
         if not tracks:
             if console:
                 console.print("[yellow]No tracks found in library[/yellow]")
-                console.print("[dim]Run 'python bang_tunes.py build' then 'download' to add music[/dim]")
+                console.print(
+                    "[dim]Run 'python bang_tunes.py build' then 'download' to add music[/dim]"
+                )
             else:
                 print("No tracks found in library")
                 print("Run 'python bang_tunes.py build' then 'download' to add music")
             return 0
-        
+
         # Calculate statistics
         total_tracks = len(tracks)
         artists = set(track.get("artist", "Unknown Artist") for track in tracks)
-        albums = set(track.get("album", "Unknown Album") for track in tracks if track.get("album"))
-        
+        albums = set(
+            track.get("album", "Unknown Album")
+            for track in tracks
+            if track.get("album")
+        )
+
         # Count tracks by artist
-        artist_counts = {}
+        artist_counts: Dict[str, int] = {}
         for track in tracks:
             artist = track.get("artist", "Unknown Artist")
             artist_counts[artist] = artist_counts.get(artist, 0) + 1
-        
+
         # Get top artists
-        top_artists = sorted(artist_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-        
+        top_artists = sorted(artist_counts.items(), key=lambda x: x[1], reverse=True)[
+            :10
+        ]
+
         if console:
             console.print("\n[bold]🎵 BangTunes Library Statistics[/bold]")
             console.print()
-            
+
             # Overview stats
             from rich.table import Table
+
             stats_table = Table(title="Library Overview")
             stats_table.add_column("Metric", style="cyan")
             stats_table.add_column("Count", justify="right", style="magenta")
-            
+
             stats_table.add_row("Total Tracks", str(total_tracks))
             stats_table.add_row("Unique Artists", str(len(artists)))
             stats_table.add_row("Albums", str(len(albums)))
-            
+
             console.print(stats_table)
             console.print()
-            
+
             # Top artists
             if top_artists:
                 artist_table = Table(title="Top Artists")
                 artist_table.add_column("Artist", style="cyan")
                 artist_table.add_column("Tracks", justify="right", style="magenta")
-                
+
                 for artist, count in top_artists:
                     artist_table.add_row(artist, str(count))
-                
+
                 console.print(artist_table)
         else:
             print("\n🎵 BangTunes Library Statistics")
@@ -748,9 +795,9 @@ def cmd_stats(args: Any, root: Path, config: Dict[str, Any]) -> int:
             print("-" * 30)
             for artist, count in top_artists:
                 print(f"{artist:<25} {count:>3}")
-        
+
         return 0
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Stats failed: {e}[/red]")
@@ -765,61 +812,66 @@ def cmd_quickplay(args: Any, root: Path, config: Dict[str, Any]) -> int:
         # Get database connection
         db_path = root / "library.db"
         db_conn = get_db(db_path)
-        
+
         # Get all tracks
         tracks = db_get_all_tracks(db_conn)
-        
+
         if not tracks:
             if console:
                 console.print("[yellow]No tracks found in library[/yellow]")
-                console.print("[dim]Run 'python bang_tunes.py build' then 'download' to add music[/dim]")
+                console.print(
+                    "[dim]Run 'python bang_tunes.py build' then 'download' to add music[/dim]"
+                )
             else:
                 print("No tracks found in library")
                 print("Run 'python bang_tunes.py build' then 'download' to add music")
             return 0
-        
+
         # Pick a random track
         import random
+
         track = random.choice(tracks)
         file_path = track.get("file_path")
-        
+
         if not file_path or not Path(file_path).exists():
             if console:
                 console.print("[red]Selected track file not found[/red]")
             else:
                 print("Selected track file not found")
             return 1
-        
+
         # Show what we're playing
         title = track.get("title", "Unknown Title")
         artist = track.get("artist", "Unknown Artist")
-        
+
         if console:
             console.print(f"[green]🎵 Now playing:[/green] {title} by {artist}")
         else:
             print(f"🎵 Now playing: {title} by {artist}")
-        
+
         # Try to play with available players
         import shutil
-        
+
         # Check for available players
         players = ["ffplay", "mpv", "vlc", "mplayer"]
         available_player = None
-        
+
         for player in players:
             if shutil.which(player):
                 available_player = player
                 break
-        
+
         if not available_player:
             if console:
                 console.print("[red]No audio player found[/red]")
-                console.print("[dim]Install ffplay, mpv, vlc, or mplayer to use quickplay[/dim]")
+                console.print(
+                    "[dim]Install ffplay, mpv, vlc, or mplayer to use quickplay[/dim]"
+                )
             else:
                 print("No audio player found")
                 print("Install ffplay, mpv, vlc, or mplayer to use quickplay")
             return 1
-        
+
         # Play the track
         if available_player == "ffplay":
             cmd = ["ffplay", "-nodisp", "-autoexit", file_path]
@@ -829,17 +881,17 @@ def cmd_quickplay(args: Any, root: Path, config: Dict[str, Any]) -> int:
             cmd = ["vlc", "--intf", "dummy", "--play-and-exit", file_path]
         else:  # mplayer
             cmd = ["mplayer", "-really-quiet", file_path]
-        
+
         if console:
             console.print(f"[dim]Using {available_player} to play audio[/dim]")
         else:
             print(f"Using {available_player} to play audio")
-        
+
         # Run the player
         subprocess.run(cmd, check=False)
-        
+
         return 0
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Quickplay failed: {e}[/red]")
@@ -857,101 +909,121 @@ def cmd_edit_metadata(args: Any, root: Path, config: Dict[str, Any]) -> int:
         else:
             print("✏️  BangTunes Metadata Editor")
             print("=" * 30)
-        
+
         # Get database connection
         db_path = root / "library.db"
         db_conn = get_db(db_path)
-        
+
         # Get all tracks
         tracks = db_get_all_tracks(db_conn)
-        
+
         if not tracks:
             if console:
                 console.print("[yellow]No tracks found in library[/yellow]")
             else:
                 print("No tracks found in library")
             return 0
-        
+
         if console:
             console.print(f"[dim]Found {len(tracks)} tracks in library[/dim]")
-            console.print("[dim]Showing tracks with 'Unknown' metadata that need editing...[/dim]")
+            console.print(
+                "[dim]Showing tracks with 'Unknown' metadata that need editing...[/dim]"
+            )
             console.print()
         else:
             print(f"Found {len(tracks)} tracks in library")
             print("Showing tracks with 'Unknown' metadata that need editing...")
             print()
-        
+
         # Find tracks that need metadata editing
         needs_editing = []
         for track in tracks:
             title = track.get("title", "")
             artist = track.get("artist", "")
-            
-            if ("Unknown" in title or "Unknown" in artist or 
-                not title or not artist or
-                title.startswith("yt") or artist.startswith("yt")):
+
+            if (
+                "Unknown" in title
+                or "Unknown" in artist
+                or not title
+                or not artist
+                or title.startswith("yt")
+                or artist.startswith("yt")
+            ):
                 needs_editing.append(track)
-        
+
         if not needs_editing:
             if console:
                 console.print("[green]✓ All tracks have good metadata![/green]")
             else:
                 print("✓ All tracks have good metadata!")
             return 0
-        
+
         if console:
-            console.print(f"[yellow]Found {len(needs_editing)} tracks that need metadata editing:[/yellow]")
+            console.print(
+                f"[yellow]Found {len(needs_editing)} tracks that need metadata editing:[/yellow]"
+            )
             console.print()
-            
+
             from rich.table import Table
+
             table = Table()
             table.add_column("ID", style="dim")
             table.add_column("Current Title", style="red")
             table.add_column("Current Artist", style="red")
             table.add_column("File", style="dim")
-            
+
             for track in needs_editing[:20]:  # Show first 20
                 table.add_row(
                     str(track.get("id", "")),
                     track.get("title", "Unknown")[:40],
                     track.get("artist", "Unknown")[:30],
-                    Path(track.get("file_path", "")).name[:30] if track.get("file_path") else ""
+                    Path(track.get("file_path", "")).name[:30]
+                    if track.get("file_path")
+                    else "",
                 )
-            
+
             console.print(table)
-            
+
             if len(needs_editing) > 20:
-                console.print(f"[dim]... and {len(needs_editing) - 20} more tracks[/dim]")
-            
+                console.print(
+                    f"[dim]... and {len(needs_editing) - 20} more tracks[/dim]"
+                )
+
             console.print()
             console.print("[bold]💡 Metadata Editing Options:[/bold]")
-            console.print("1. Use the full PanPipe player: [cyan]python bang_tunes.py play[/cyan]")
+            console.print(
+                "1. Use the full PanPipe player: [cyan]python bang_tunes.py play[/cyan]"
+            )
             console.print("   (Interactive TUI with metadata editor)")
             console.print("2. Manual database editing with SQL tools")
             console.print("3. Re-download with better metadata sources")
-            
+
         else:
             print(f"Found {len(needs_editing)} tracks that need metadata editing:")
             print()
-            
+
             for i, track in enumerate(needs_editing[:20], 1):
                 title = track.get("title", "Unknown")[:40]
                 artist = track.get("artist", "Unknown")[:30]
-                file_name = Path(track.get("file_path", "")).name[:30] if track.get("file_path") else ""
+                file_name = (
+                    Path(track.get("file_path", "")).name[:30]
+                    if track.get("file_path")
+                    else ""
+                )
                 print(f"{i:2d}. {title} | {artist} | {file_name}")
-            
+
             if len(needs_editing) > 20:
                 print(f"    ... and {len(needs_editing) - 20} more tracks")
-            
+
             print()
             print("💡 Metadata Editing Options:")
             print("1. Use the full PanPipe player: python bang_tunes.py play")
             print("   (Interactive TUI with metadata editor)")
             print("2. Manual database editing with SQL tools")
             print("3. Re-download with better metadata sources")
-        
+
         return 0
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Edit-metadata failed: {e}[/red]")
@@ -969,89 +1041,105 @@ def cmd_rescan(args: Any, root: Path, config: Dict[str, Any]) -> int:
         else:
             print("🔍 BangTunes Library Rescan")
             print("=" * 30)
-        
+
         # Get database connection
         db_path = root / "library.db"
         db_conn = get_db(db_path)
-        
+
         # Get all tracks from database
         tracks = db_get_all_tracks(db_conn)
-        
+
         if not tracks:
             if console:
                 console.print("[yellow]No tracks found in database[/yellow]")
             else:
                 print("No tracks found in database")
             return 0
-        
+
         if console:
             console.print(f"[dim]Checking {len(tracks)} tracks in database...[/dim]")
         else:
             print(f"Checking {len(tracks)} tracks in database...")
-        
+
         missing_files = []
         invalid_paths = []
-        
+
         for track in tracks:
             file_path = track.get("file_path")
             if not file_path:
                 invalid_paths.append(track)
                 continue
-            
+
             path_obj = Path(file_path)
             if not path_obj.exists():
                 missing_files.append(track)
-        
+
         # Report findings
         if console:
             console.print()
             if not missing_files and not invalid_paths:
-                console.print("[green]✓ All tracks found on disk - library is in sync[/green]")
+                console.print(
+                    "[green]✓ All tracks found on disk - library is in sync[/green]"
+                )
             else:
                 if missing_files:
-                    console.print(f"[red]✗ {len(missing_files)} tracks missing from disk:[/red]")
+                    console.print(
+                        f"[red]✗ {len(missing_files)} tracks missing from disk:[/red]"
+                    )
                     for track in missing_files[:10]:  # Show first 10
                         title = track.get("title", "Unknown")
                         artist = track.get("artist", "Unknown")
                         file_path = track.get("file_path", "")
                         console.print(f"  [dim]• {title} by {artist}[/dim]")
                         console.print(f"    [red]{file_path}[/red]")
-                    
+
                     if len(missing_files) > 10:
-                        console.print(f"    [dim]... and {len(missing_files) - 10} more[/dim]")
-                
+                        console.print(
+                            f"    [dim]... and {len(missing_files) - 10} more[/dim]"
+                        )
+
                 if invalid_paths:
-                    console.print(f"[yellow]⚠️  {len(invalid_paths)} tracks with invalid paths[/yellow]")
-                
+                    console.print(
+                        f"[yellow]⚠️  {len(invalid_paths)} tracks with invalid paths[/yellow]"
+                    )
+
                 # Offer to fix issues
-                fix_requested = getattr(args, 'fix', False)
+                fix_requested = getattr(args, "fix", False)
                 if fix_requested:
                     if console:
-                        console.print("\n[dim]Removing invalid entries from database...[/dim]")
+                        console.print(
+                            "\n[dim]Removing invalid entries from database...[/dim]"
+                        )
                     else:
                         print("\nRemoving invalid entries from database...")
-                    
+
                     # Remove missing files from database
                     cur = db_conn.cursor()
                     removed_count = 0
-                    
+
                     for track in missing_files + invalid_paths:
                         track_id = track.get("id")
                         if track_id:
                             cur.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
                             removed_count += 1
-                    
+
                     db_conn.commit()
-                    
+
                     if console:
-                        console.print(f"[green]✓ Removed {removed_count} invalid entries[/green]")
+                        console.print(
+                            f"[green]✓ Removed {removed_count} invalid entries[/green]"
+                        )
                     else:
                         print(f"✓ Removed {removed_count} invalid entries")
                 else:
                     if console:
-                        console.print("\n[dim]💡 Run with --fix to remove invalid entries from database[/dim]")
+                        console.print(
+                            "\n[dim]💡 Run with --fix to remove invalid entries from database[/dim]"
+                        )
                     else:
-                        print("\n💡 Run with --fix to remove invalid entries from database")
+                        print(
+                            "\n💡 Run with --fix to remove invalid entries from database"
+                        )
         else:
             print()
             if not missing_files and not invalid_paths:
@@ -1065,33 +1153,33 @@ def cmd_rescan(args: Any, root: Path, config: Dict[str, Any]) -> int:
                         file_path = track.get("file_path", "")
                         print(f"  • {title} by {artist}")
                         print(f"    {file_path}")
-                    
+
                     if len(missing_files) > 10:
                         print(f"    ... and {len(missing_files) - 10} more")
-                
+
                 if invalid_paths:
                     print(f"⚠️  {len(invalid_paths)} tracks with invalid paths")
-                
-                fix_requested = getattr(args, 'fix', False)
+
+                fix_requested = getattr(args, "fix", False)
                 if fix_requested:
                     print("\nRemoving invalid entries from database...")
-                    
+
                     cur = db_conn.cursor()
                     removed_count = 0
-                    
+
                     for track in missing_files + invalid_paths:
                         track_id = track.get("id")
                         if track_id:
                             cur.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
                             removed_count += 1
-                    
+
                     db_conn.commit()
                     print(f"✓ Removed {removed_count} invalid entries")
                 else:
                     print("\n💡 Run with --fix to remove invalid entries from database")
-        
+
         return 0 if not (missing_files or invalid_paths) else 1
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Rescan failed: {e}[/red]")
@@ -1103,22 +1191,22 @@ def cmd_rescan(args: Any, root: Path, config: Dict[str, Any]) -> int:
 def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
     """Handle player commands (play, setup-player, sync, player-status)."""
     try:
-        cmd = getattr(args, 'cmd', 'play')
-        
-        if cmd == 'play':
+        cmd = getattr(args, "cmd", "play")
+
+        if cmd == "play":
             if console:
                 console.print("[bold]🎵 BangTunes Player[/bold]")
                 console.print()
             else:
                 print("🎵 BangTunes Player")
-            
+
             # Try to find and launch Rust PanPipe first
             panpipe_paths = [
                 root / "target" / "release" / "panpipe_interactive",
                 root / "panpipe_interactive",
-                "panpipe_interactive"
+                "panpipe_interactive",
             ]
-            
+
             panpipe_binary = None
             for path in panpipe_paths:
                 if isinstance(path, Path) and path.exists():
@@ -1126,14 +1214,17 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     break
                 elif isinstance(path, str):
                     import shutil as shutil_module
+
                     if shutil_module.which(path):
                         panpipe_binary = path
                         break
-            
+
             if panpipe_binary:
                 try:
                     if console:
-                        console.print("[dim]Launching PanPipe interactive player...[/dim]")
+                        console.print(
+                            "[dim]Launching PanPipe interactive player...[/dim]"
+                        )
                     else:
                         print("Launching PanPipe interactive player...")
                     # Launch PanPipe (it will auto-discover music in the current directory)
@@ -1141,15 +1232,20 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     return 0
                 except Exception as e:
                     if console:
-                        console.print(f"[yellow]PanPipe failed, falling back to Python player: {e}[/yellow]")
+                        console.print(
+                            f"[yellow]PanPipe failed, falling back to Python player: {e}[/yellow]"
+                        )
                     else:
                         print(f"PanPipe failed, falling back to Python player: {e}")
-            
+
             # Fallback to Python player when Rust player not available
             try:
                 from bangtunes.python_player import run_python_player
+
                 if console:
-                    console.print("[dim]Using Python-based player (Rust player not available)[/dim]")
+                    console.print(
+                        "[dim]Using Python-based player (Rust player not available)[/dim]"
+                    )
                 else:
                     print("Using Python-based player (Rust player not available)")
                 return run_python_player(root, config)
@@ -1161,8 +1257,8 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     print(f"Python player not available: {e}")
                     print("Use 'quickplay' for basic playback")
                 return 1
-        
-        elif cmd == 'setup-player':
+
+        elif cmd == "setup-player":
             if console:
                 console.print("[bold]🔧 Player Setup[/bold]")
                 console.print()
@@ -1170,9 +1266,10 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
             else:
                 print("🔧 Player Setup")
                 print("Setting up PanPipe integration...")
-            
+
             # Check if Rust is available
             import shutil
+
             if not shutil.which("cargo"):
                 if console:
                     console.print("[red]✗ Rust/Cargo not found[/red]")
@@ -1181,21 +1278,21 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     print("✗ Rust/Cargo not found")
                     print("Install Rust from https://rustup.rs/")
                 return 1
-            
+
             # Detect if we're on Termux and use specialized build process
             is_termux = os.environ.get("PREFIX", "").find("com.termux") != -1
-            
+
             if is_termux:
                 return _setup_player_termux(root, console)
             else:
                 return _setup_player_generic(root, console)
-        
-        elif cmd == 'sync':
+
+        elif cmd == "sync":
             # Sync BangTunes library with player database
             try:
                 from bangtunes.player_integration import create_integration
                 from bangtunes.config import load_config
-                
+
                 config = load_config(root)
                 integration = create_integration(root, config)
                 integration.sync_libraries()
@@ -1203,7 +1300,9 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
             except ImportError:
                 if console:
                     console.print("[red]❌ Player integration not available[/red]")
-                    console.print("[dim]Run 'python bang_tunes.py setup-player' first[/dim]")
+                    console.print(
+                        "[dim]Run 'python bang_tunes.py setup-player' first[/dim]"
+                    )
                 else:
                     print("❌ Player integration not available")
                     print("Run 'python bang_tunes.py setup-player' first")
@@ -1214,13 +1313,13 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 else:
                     print(f"❌ Sync failed: {e}")
                 return 1
-        
-        elif cmd == 'player-status':
+
+        elif cmd == "player-status":
             # Show player integration status
             try:
                 from bangtunes.player_integration import create_integration
                 from bangtunes.config import load_config
-                
+
                 config = load_config(root)
                 integration = create_integration(root, config)
                 integration.status()
@@ -1228,7 +1327,9 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
             except ImportError:
                 if console:
                     console.print("[red]❌ Player integration not available[/red]")
-                    console.print("[dim]Run 'python bang_tunes.py setup-player' first[/dim]")
+                    console.print(
+                        "[dim]Run 'python bang_tunes.py setup-player' first[/dim]"
+                    )
                 else:
                     print("❌ Player integration not available")
                     print("Run 'python bang_tunes.py setup-player' first")
@@ -1239,14 +1340,14 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 else:
                     print(f"❌ Status check failed: {e}")
                 return 1
-        
+
         else:
             if console:
                 console.print(f"[red]Unknown player command: {cmd}[/red]")
             else:
                 print(f"Unknown player command: {cmd}")
             return 1
-        
+
     except Exception as e:
         if console:
             console.print(f"[red]Player command failed: {e}[/red]")
@@ -1255,87 +1356,130 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
         return 1
 
 
-def _setup_player_termux(root: Path, console) -> int:
+def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
     """Termux-specific player setup with Rust toolchain fixes."""
-    
+
     if console:
-        console.print("[yellow]🤖 Termux detected - using specialized build process[/yellow]")
+        console.print(
+            "[yellow]🤖 Termux detected - using specialized build process[/yellow]"
+        )
         console.print()
     else:
         print("🤖 Termux detected - using specialized build process")
-    
+
     # Step 1: Clean any previous build artifacts
     if console:
         console.print("[dim]Cleaning previous build artifacts...[/dim]")
     else:
         print("Cleaning previous build artifacts...")
-    
+
     try:
         subprocess.run(["cargo", "clean"], cwd=root, check=True, capture_output=True)
     except subprocess.CalledProcessError:
         pass  # Clean can fail if no previous build
-    
+
     # Step 2: Check Rust setup for Termux
     if console:
         console.print("[dim]Checking Rust setup for Termux...[/dim]")
     else:
         print("Checking Rust setup for Termux...")
-    
+
     # Termux uses pkg-managed Rust, not rustup
     if shutil.which("rustup"):
         # Standard rustup installation
         try:
-            subprocess.run(["rustup", "self", "update"], check=True, capture_output=True)
-            subprocess.run(["rustup", "install", "stable"], check=True, capture_output=True)
-            subprocess.run(["rustup", "default", "stable"], check=True, capture_output=True)
-            subprocess.run(["rustup", "target", "add", "aarch64-linux-android"], check=True, capture_output=True)
-            
+            subprocess.run(
+                ["rustup", "self", "update"], check=True, capture_output=True
+            )
+            subprocess.run(
+                ["rustup", "install", "stable"], check=True, capture_output=True
+            )
+            subprocess.run(
+                ["rustup", "default", "stable"], check=True, capture_output=True
+            )
+            subprocess.run(
+                ["rustup", "target", "add", "aarch64-linux-android"],
+                check=True,
+                capture_output=True,
+            )
+
             if console:
                 console.print("[green]✓ Rust toolchain updated via rustup[/green]")
             else:
                 print("✓ Rust toolchain updated via rustup")
         except subprocess.CalledProcessError:
             if console:
-                console.print("[yellow]⚠️ Rustup update failed, using existing setup[/yellow]")
+                console.print(
+                    "[yellow]⚠️ Rustup update failed, using existing setup[/yellow]"
+                )
             else:
                 print("⚠️ Rustup update failed, using existing setup")
     else:
         # Termux pkg-managed Rust
         if console:
-            console.print("[green]✓ Using Termux pkg-managed Rust (no rustup needed)[/green]")
+            console.print(
+                "[green]✓ Using Termux pkg-managed Rust (no rustup needed)[/green]"
+            )
         else:
             print("✓ Using Termux pkg-managed Rust (no rustup needed)")
-    
+
     # Step 3: Try multiple build strategies optimized for Termux
     build_strategies = [
         # Strategy 1: Standard build (works best with Termux pkg-managed Rust)
         ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
         # Strategy 2: Build with explicit host target
-        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "--target", "aarch64-unknown-linux-gnu"],
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--bin",
+            "panpipe_interactive",
+            "--target",
+            "aarch64-unknown-linux-gnu",
+        ],
         # Strategy 3: Build with minimal features to reduce compilation complexity
-        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "--no-default-features"],
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--bin",
+            "panpipe_interactive",
+            "--no-default-features",
+        ],
         # Strategy 4: Build with specific optimization level
-        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "-C", "opt-level=2"],
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--bin",
+            "panpipe_interactive",
+            "-C",
+            "opt-level=2",
+        ],
     ]
-    
+
     for i, strategy in enumerate(build_strategies, 1):
         if console:
-            console.print(f"[dim]Trying build strategy {i}/{len(build_strategies)}...[/dim]")
+            console.print(
+                f"[dim]Trying build strategy {i}/{len(build_strategies)}...[/dim]"
+            )
         else:
             print(f"Trying build strategy {i}/{len(build_strategies)}...")
-        
+
         try:
             result = subprocess.run(
                 strategy,
                 cwd=root,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=300,  # 5 minute timeout
             )
-            
+
             if result.returncode == 0:
                 if console:
-                    console.print(f"[green]✓ PanPipe player built successfully (strategy {i})[/green]")
+                    console.print(
+                        f"[green]✓ PanPipe player built successfully (strategy {i})[/green]"
+                    )
                     console.print("[dim]Advanced TUI player is now available[/dim]")
                 else:
                     print(f"✓ PanPipe player built successfully (strategy {i})")
@@ -1343,8 +1487,8 @@ def _setup_player_termux(root: Path, console) -> int:
                 return 0
             else:
                 # Show first few lines of error for debugging
-                error_lines = result.stderr.split('\n')[:5] if result.stderr else []
-                error_preview = '\n'.join(error_lines)
+                error_lines = result.stderr.split("\n")[:5] if result.stderr else []
+                error_preview = "\n".join(error_lines)
                 if console:
                     console.print(f"[yellow]Strategy {i} failed[/yellow]")
                     if error_preview:
@@ -1353,10 +1497,12 @@ def _setup_player_termux(root: Path, console) -> int:
                     print(f"Strategy {i} failed")
                     if error_preview:
                         print(f"Error: {error_preview}")
-                    
+
         except subprocess.TimeoutExpired:
             if console:
-                console.print(f"[yellow]Strategy {i} timed out, trying next...[/yellow]")
+                console.print(
+                    f"[yellow]Strategy {i} timed out, trying next...[/yellow]"
+                )
             else:
                 print(f"Strategy {i} timed out, trying next...")
         except Exception as e:
@@ -1364,13 +1510,15 @@ def _setup_player_termux(root: Path, console) -> int:
                 console.print(f"[yellow]Strategy {i} error: {e}[/yellow]")
             else:
                 print(f"Strategy {i} error: {e}")
-    
+
     # All strategies failed - provide fallback
     if console:
         console.print("[red]✗ All build strategies failed[/red]")
         console.print()
         console.print("[yellow]🎵 Fallback: Basic playback still available[/yellow]")
-        console.print("[dim]• Use 'python bang_tunes.py quickplay' for instant music[/dim]")
+        console.print(
+            "[dim]• Use 'python bang_tunes.py quickplay' for instant music[/dim]"
+        )
         console.print("[dim]• Uses mpv/termux-media-player for audio playback[/dim]")
         console.print("[dim]• Advanced TUI features unavailable[/dim]")
     else:
@@ -1380,27 +1528,27 @@ def _setup_player_termux(root: Path, console) -> int:
         print("• Use 'python bang_tunes.py quickplay' for instant music")
         print("• Uses mpv/termux-media-player for audio playback")
         print("• Advanced TUI features unavailable")
-    
+
     return 1
 
 
-def _setup_player_generic(root: Path, console) -> int:
+def _setup_player_generic(root: Path, console: Optional[Any]) -> int:
     """Generic player setup for non-Termux platforms."""
-    
+
     # Try to build PanPipe with standard process
     try:
         if console:
             console.print("[dim]Building PanPipe player...[/dim]")
         else:
             print("Building PanPipe player...")
-        
+
         result = subprocess.run(
             ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
             cwd=root,
             capture_output=True,
-            text=True
+            text=True,
         )
-        
+
         if result.returncode == 0:
             if console:
                 console.print("[green]✓ PanPipe player built successfully[/green]")
@@ -1413,7 +1561,7 @@ def _setup_player_generic(root: Path, console) -> int:
             else:
                 print(f"✗ Build failed: {result.stderr}")
             return 1
-    
+
     except Exception as e:
         if console:
             console.print(f"[red]Build error: {e}[/red]")

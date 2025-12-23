@@ -3,7 +3,7 @@ Shared constants for BangTunes to prevent configuration drift.
 
 This module serves as the single source of truth for:
 - Valid formats
-- Valid speed modes  
+- Valid speed modes
 - Default values
 - Other shared configuration constants
 
@@ -71,8 +71,4 @@ MIN_SCORE_RANGE = (0, 100)
 DEFAULT_DB_NAME = "library.db"
 
 # Directory structure constants
-REQUIRED_DIRECTORIES = [
-    "batches",
-    "downloads", 
-    "downloads/temp"
-]
+REQUIRED_DIRECTORIES = ["batches", "downloads", "downloads/temp"]

@@ -35,7 +35,7 @@ from ytmusicapi import YTMusic
 from rapidfuzz import fuzz
 
 
-def test_ytm_connection():
+def test_ytm_connection() -> None:
     """See if we can actually connect to YouTube Music"""
     print("Testing YouTube Music API connection...")
 
@@ -105,26 +105,24 @@ def test_ytm_connection():
                 except Exception as e:
                     print(f"  ❌ Error fetching artist page: {e}")
 
-        return True
-
     except Exception as e:
         print(f"❌ Error: {e}")
-        return False
 
 
-def test_config_loading():
+def test_config_loading() -> None:
     """Test configuration loading"""
     print("\n⚙️  Testing configuration loading...")
 
     try:
         # Import the config loading function
-        from bang_tunes import load_config, detect_root
+        from bangtunes.config import load_config
+        from bangtunes.env import get_root
 
-        config = load_config()
-        print(f"Config loaded: {config}")
-
-        root = detect_root()
+        root = get_root()
         print(f"Detected root: {root}")
+
+        config = load_config(root)
+        print(f"Config loaded: {config}")
 
         # Check if config file exists
         config_path = root / "bangtunes.toml"
@@ -133,31 +131,16 @@ def test_config_loading():
         else:
             print(f"⚠️  Config file not found at: {config_path}")
 
-        return True
-
     except Exception as e:
         print(f"❌ Config loading error: {e}")
-        return False
 
 
 if __name__ == "__main__":
-    print("🎵 Bang Tunes Debug Tool 🎵")
+    print("🎵 BangTunes YouTube Music Debug Tool")
     print("=" * 40)
 
-    # Test configuration
-    config_ok = test_config_loading()
-
-    # Test YouTube Music API
-    ytm_ok = test_ytm_connection()
-
+    test_ytm_connection()
     print("\n" + "=" * 40)
-    print("📊 Summary:")
-    print(f"  Config loading: {'✅ OK' if config_ok else '❌ FAILED'}")
-    print(f"  YouTube Music API: {'✅ OK' if ytm_ok else '❌ FAILED'}")
 
-    if not ytm_ok:
-        print("\n💡 Possible issues:")
-        print("  - Network connectivity problems")
-        print("  - YouTube Music API rate limiting")
-        print("  - Missing dependencies")
-        print("  - Regional restrictions")
+    # Also test config loading
+    test_config_loading()

@@ -8,14 +8,15 @@ import tempfile
 from pathlib import Path
 import sys
 import os
+from typing import List, Dict
 
 # Add the parent directory to the path so we can import bang_tunes
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bang_tunes import db_add_track, db_get_all_tracks, db_update_track_metadata
+from bangtunes.db import db_add_track, db_get_all_tracks, db_update_track_metadata
 
 
-def test_db_get_all_tracks():
+def test_db_get_all_tracks() -> None:
     """Test retrieving all tracks from database"""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Set up test database
@@ -67,7 +68,7 @@ def test_db_get_all_tracks():
         conn.close()
 
 
-def test_db_update_track_metadata():
+def test_db_update_track_metadata() -> None:
     """Test updating track metadata in database"""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Set up test database
@@ -114,7 +115,7 @@ def test_db_update_track_metadata():
         conn.close()
 
 
-def test_db_update_nonexistent_track():
+def test_db_update_nonexistent_track() -> None:
     """Test updating metadata for non-existent track"""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Set up test database
@@ -145,29 +146,29 @@ def test_db_update_nonexistent_track():
         conn.close()
 
 
-def test_metadata_editor_search_functionality():
+def test_metadata_search() -> None:
     """Test the search functionality used in metadata editor"""
-    tracks = [
+    tracks: List[Dict[str, str]] = [
         {
-            "id": 1,
+            "id": "1",
             "title": "Bohemian Rhapsody",
             "artist": "Queen",
             "album": "A Night at the Opera",
         },
         {
-            "id": 2,
+            "id": "2",
             "title": "Stairway to Heaven",
             "artist": "Led Zeppelin",
             "album": "Led Zeppelin IV",
         },
         {
-            "id": 3,
+            "id": "3",
             "title": "Hotel California",
             "artist": "Eagles",
             "album": "Hotel California",
         },
         {
-            "id": 4,
+            "id": "4",
             "title": "Another Brick in the Wall",
             "artist": "Pink Floyd",
             "album": "The Wall",
@@ -221,5 +222,5 @@ if __name__ == "__main__":
     test_db_get_all_tracks()
     test_db_update_track_metadata()
     test_db_update_nonexistent_track()
-    test_metadata_editor_search_functionality()
+    test_metadata_search()
     print("All metadata editor tests passed!")
