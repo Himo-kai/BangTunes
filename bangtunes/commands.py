@@ -4,7 +4,9 @@ Command implementations for BangTunes CLI.
 Each command is implemented as a separate function that takes args, root, and config.
 """
 
+import os
 import subprocess
+import shutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -1170,39 +1172,13 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     print("Install Rust from https://rustup.rs/")
                 return 1
             
-            # Try to build PanPipe
-            try:
-                if console:
-                    console.print("[dim]Building PanPipe player...[/dim]")
-                else:
-                    print("Building PanPipe player...")
-                
-                result = subprocess.run(
-                    ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
-                    cwd=root,
-                    capture_output=True,
-                    text=True
-                )
-                
-                if result.returncode == 0:
-                    if console:
-                        console.print("[green]✓ PanPipe player built successfully[/green]")
-                    else:
-                        print("✓ PanPipe player built successfully")
-                    return 0
-                else:
-                    if console:
-                        console.print(f"[red]✗ Build failed: {result.stderr}[/red]")
-                    else:
-                        print(f"✗ Build failed: {result.stderr}")
-                    return 1
+            # Detect if we're on Termux and use specialized build process
+            is_termux = os.environ.get("PREFIX", "").find("com.termux") != -1
             
-            except Exception as e:
-                if console:
-                    console.print(f"[red]Build error: {e}[/red]")
-                else:
-                    print(f"Build error: {e}")
-                return 1
+            if is_termux:
+                return _setup_player_termux(root, console)
+            else:
+                return _setup_player_generic(root, console)
         
         elif cmd == 'sync':
             # Sync BangTunes library with player database
@@ -1266,4 +1242,159 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
             console.print(f"[red]Player command failed: {e}[/red]")
         else:
             print(f"Player command failed: {e}")
+        return 1
+
+
+def _setup_player_termux(root: Path, console) -> int:
+    """Termux-specific player setup with Rust toolchain fixes."""
+    
+    if console:
+        console.print("[yellow]🤖 Termux detected - using specialized build process[/yellow]")
+        console.print()
+    else:
+        print("🤖 Termux detected - using specialized build process")
+    
+    # Step 1: Clean any previous build artifacts
+    if console:
+        console.print("[dim]Cleaning previous build artifacts...[/dim]")
+    else:
+        print("Cleaning previous build artifacts...")
+    
+    try:
+        subprocess.run(["cargo", "clean"], cwd=root, check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        pass  # Clean can fail if no previous build
+    
+    # Step 2: Update Rust toolchain for Termux
+    if console:
+        console.print("[dim]Updating Rust toolchain for Android...[/dim]")
+    else:
+        print("Updating Rust toolchain for Android...")
+    
+    try:
+        # Update rustup
+        subprocess.run(["rustup", "self", "update"], check=True, capture_output=True)
+        
+        # Install stable toolchain
+        subprocess.run(["rustup", "install", "stable"], check=True, capture_output=True)
+        subprocess.run(["rustup", "default", "stable"], check=True, capture_output=True)
+        
+        # Add Android target
+        subprocess.run(["rustup", "target", "add", "aarch64-linux-android"], check=True, capture_output=True)
+        
+        if console:
+            console.print("[green]✓ Rust toolchain updated[/green]")
+        else:
+            print("✓ Rust toolchain updated")
+            
+    except subprocess.CalledProcessError:
+        if console:
+            console.print("[yellow]⚠️ Toolchain update failed, continuing with existing setup[/yellow]")
+        else:
+            print("⚠️ Toolchain update failed, continuing with existing setup")
+    
+    # Step 3: Try multiple build strategies
+    build_strategies = [
+        # Strategy 1: Build for Android target explicitly
+        ["cargo", "build", "--release", "--target", "aarch64-linux-android", "--bin", "panpipe_interactive"],
+        # Strategy 2: Build with host target
+        ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
+        # Strategy 3: Build with specific Rust edition
+        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "--config", "package.edition=\"2021\""],
+    ]
+    
+    for i, strategy in enumerate(build_strategies, 1):
+        if console:
+            console.print(f"[dim]Trying build strategy {i}/{len(build_strategies)}...[/dim]")
+        else:
+            print(f"Trying build strategy {i}/{len(build_strategies)}...")
+        
+        try:
+            result = subprocess.run(
+                strategy,
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            if result.returncode == 0:
+                if console:
+                    console.print(f"[green]✓ PanPipe player built successfully (strategy {i})[/green]")
+                    console.print("[dim]Advanced TUI player is now available[/dim]")
+                else:
+                    print(f"✓ PanPipe player built successfully (strategy {i})")
+                    print("Advanced TUI player is now available")
+                return 0
+            else:
+                if console:
+                    console.print(f"[yellow]Strategy {i} failed, trying next...[/yellow]")
+                else:
+                    print(f"Strategy {i} failed, trying next...")
+                    
+        except subprocess.TimeoutExpired:
+            if console:
+                console.print(f"[yellow]Strategy {i} timed out, trying next...[/yellow]")
+            else:
+                print(f"Strategy {i} timed out, trying next...")
+        except Exception as e:
+            if console:
+                console.print(f"[yellow]Strategy {i} error: {e}[/yellow]")
+            else:
+                print(f"Strategy {i} error: {e}")
+    
+    # All strategies failed - provide fallback
+    if console:
+        console.print("[red]✗ All build strategies failed[/red]")
+        console.print()
+        console.print("[yellow]🎵 Fallback: Basic playback still available[/yellow]")
+        console.print("[dim]• Use 'python bang_tunes.py quickplay' for instant music[/dim]")
+        console.print("[dim]• Uses mpv/termux-media-player for audio playback[/dim]")
+        console.print("[dim]• Advanced TUI features unavailable[/dim]")
+    else:
+        print("✗ All build strategies failed")
+        print()
+        print("🎵 Fallback: Basic playback still available")
+        print("• Use 'python bang_tunes.py quickplay' for instant music")
+        print("• Uses mpv/termux-media-player for audio playback")
+        print("• Advanced TUI features unavailable")
+    
+    return 1
+
+
+def _setup_player_generic(root: Path, console) -> int:
+    """Generic player setup for non-Termux platforms."""
+    
+    # Try to build PanPipe with standard process
+    try:
+        if console:
+            console.print("[dim]Building PanPipe player...[/dim]")
+        else:
+            print("Building PanPipe player...")
+        
+        result = subprocess.run(
+            ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
+            cwd=root,
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            if console:
+                console.print("[green]✓ PanPipe player built successfully[/green]")
+            else:
+                print("✓ PanPipe player built successfully")
+            return 0
+        else:
+            if console:
+                console.print(f"[red]✗ Build failed: {result.stderr}[/red]")
+            else:
+                print(f"✗ Build failed: {result.stderr}")
+            return 1
+    
+    except Exception as e:
+        if console:
+            console.print(f"[red]Build error: {e}[/red]")
+        else:
+            print(f"Build error: {e}")
         return 1

@@ -84,22 +84,22 @@ echo "📁 Creating project structure..."
 mkdir -p batches downloads
 echo "$(sym_ok) Directory structure created"
 
-# Step 4: Build Rust components (if possible)
+# Step 4: Build Rust components using specialized Termux setup
 echo
 echo "🦀 Building Rust components..."
 if command -v cargo >/dev/null 2>&1; then
-    echo "   Building PanPipe player..."
-    if cargo build --release --bin panpipe_interactive; then
+    echo "   Using Termux-optimized build process..."
+    if python bang_tunes.py setup-player; then
         echo "$(sym_ok) Rust player built successfully"
         RUST_AVAILABLE=true
     else
         echo "⚠️  Rust build failed - advanced player unavailable"
-        echo "   Basic playback will still work with ffmpeg"
+        echo "   Basic playback will still work with mpv/termux-media-player"
         RUST_AVAILABLE=false
     fi
 else
     echo "⚠️  Rust not available - advanced player unavailable"
-    echo "   Basic playback will still work with ffmpeg"
+    echo "   Basic playback will still work with mpv/termux-media-player"
     RUST_AVAILABLE=false
 fi
 
