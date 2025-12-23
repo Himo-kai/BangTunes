@@ -1265,42 +1265,47 @@ def _setup_player_termux(root: Path, console) -> int:
     except subprocess.CalledProcessError:
         pass  # Clean can fail if no previous build
     
-    # Step 2: Update Rust toolchain for Termux
+    # Step 2: Check Rust setup for Termux
     if console:
-        console.print("[dim]Updating Rust toolchain for Android...[/dim]")
+        console.print("[dim]Checking Rust setup for Termux...[/dim]")
     else:
-        print("Updating Rust toolchain for Android...")
+        print("Checking Rust setup for Termux...")
     
-    try:
-        # Update rustup
-        subprocess.run(["rustup", "self", "update"], check=True, capture_output=True)
-        
-        # Install stable toolchain
-        subprocess.run(["rustup", "install", "stable"], check=True, capture_output=True)
-        subprocess.run(["rustup", "default", "stable"], check=True, capture_output=True)
-        
-        # Add Android target
-        subprocess.run(["rustup", "target", "add", "aarch64-linux-android"], check=True, capture_output=True)
-        
-        if console:
-            console.print("[green]✓ Rust toolchain updated[/green]")
-        else:
-            print("✓ Rust toolchain updated")
+    # Termux uses pkg-managed Rust, not rustup
+    if shutil.which("rustup"):
+        # Standard rustup installation
+        try:
+            subprocess.run(["rustup", "self", "update"], check=True, capture_output=True)
+            subprocess.run(["rustup", "install", "stable"], check=True, capture_output=True)
+            subprocess.run(["rustup", "default", "stable"], check=True, capture_output=True)
+            subprocess.run(["rustup", "target", "add", "aarch64-linux-android"], check=True, capture_output=True)
             
-    except subprocess.CalledProcessError:
+            if console:
+                console.print("[green]✓ Rust toolchain updated via rustup[/green]")
+            else:
+                print("✓ Rust toolchain updated via rustup")
+        except subprocess.CalledProcessError:
+            if console:
+                console.print("[yellow]⚠️ Rustup update failed, using existing setup[/yellow]")
+            else:
+                print("⚠️ Rustup update failed, using existing setup")
+    else:
+        # Termux pkg-managed Rust
         if console:
-            console.print("[yellow]⚠️ Toolchain update failed, continuing with existing setup[/yellow]")
+            console.print("[green]✓ Using Termux pkg-managed Rust (no rustup needed)[/green]")
         else:
-            print("⚠️ Toolchain update failed, continuing with existing setup")
+            print("✓ Using Termux pkg-managed Rust (no rustup needed)")
     
-    # Step 3: Try multiple build strategies
+    # Step 3: Try multiple build strategies optimized for Termux
     build_strategies = [
-        # Strategy 1: Build for Android target explicitly
-        ["cargo", "build", "--release", "--target", "aarch64-linux-android", "--bin", "panpipe_interactive"],
-        # Strategy 2: Build with host target
+        # Strategy 1: Standard build (works best with Termux pkg-managed Rust)
         ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
-        # Strategy 3: Build with specific Rust edition
-        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "--config", "package.edition=\"2021\""],
+        # Strategy 2: Build with explicit host target
+        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "--target", "aarch64-unknown-linux-gnu"],
+        # Strategy 3: Build with minimal features to reduce compilation complexity
+        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "--no-default-features"],
+        # Strategy 4: Build with specific optimization level
+        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "-C", "opt-level=2"],
     ]
     
     for i, strategy in enumerate(build_strategies, 1):
