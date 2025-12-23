@@ -1109,15 +1109,10 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
             if console:
                 console.print("[bold]🎵 BangTunes Player[/bold]")
                 console.print()
-                console.print("[dim]Launching PanPipe interactive player...[/dim]")
             else:
                 print("🎵 BangTunes Player")
-                print("Launching PanPipe interactive player...")
             
-            # Try to launch the integrated PanPipe player
-            import shutil
-            
-            # Look for the PanPipe binary
+            # Try to find and launch Rust PanPipe first
             panpipe_paths = [
                 root / "target" / "release" / "panpipe_interactive",
                 root / "panpipe_interactive",
@@ -1135,21 +1130,34 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
             
             if panpipe_binary:
                 try:
+                    if console:
+                        console.print("[dim]Launching PanPipe interactive player...[/dim]")
+                    else:
+                        print("Launching PanPipe interactive player...")
                     # Launch PanPipe (it will auto-discover music in the current directory)
                     subprocess.run([panpipe_binary], check=False)
                     return 0
                 except Exception as e:
                     if console:
-                        console.print(f"[red]Failed to launch PanPipe: {e}[/red]")
+                        console.print(f"[yellow]PanPipe failed, falling back to Python player: {e}[/yellow]")
                     else:
-                        print(f"Failed to launch PanPipe: {e}")
-            else:
+                        print(f"PanPipe failed, falling back to Python player: {e}")
+            
+            # Fallback to Python player when Rust player not available
+            try:
+                from bangtunes.python_player import run_python_player
                 if console:
-                    console.print("[yellow]PanPipe player not found[/yellow]")
-                    console.print("[dim]Run setup to build the integrated player, or use quickplay for basic playback[/dim]")
+                    console.print("[dim]Using Python-based player (Rust player not available)[/dim]")
                 else:
-                    print("PanPipe player not found")
-                    print("Run setup to build the integrated player, or use quickplay for basic playback")
+                    print("Using Python-based player (Rust player not available)")
+                return run_python_player(root, config)
+            except ImportError as e:
+                if console:
+                    console.print(f"[red]Python player not available: {e}[/red]")
+                    console.print("[dim]Use 'quickplay' for basic playback[/dim]")
+                else:
+                    print(f"Python player not available: {e}")
+                    print("Use 'quickplay' for basic playback")
                 return 1
         
         elif cmd == 'setup-player':
