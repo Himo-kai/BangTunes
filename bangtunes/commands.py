@@ -1332,10 +1332,17 @@ def _setup_player_termux(root: Path, console) -> int:
                     print("Advanced TUI player is now available")
                 return 0
             else:
+                # Show first few lines of error for debugging
+                error_lines = result.stderr.split('\n')[:5] if result.stderr else []
+                error_preview = '\n'.join(error_lines)
                 if console:
-                    console.print(f"[yellow]Strategy {i} failed, trying next...[/yellow]")
+                    console.print(f"[yellow]Strategy {i} failed[/yellow]")
+                    if error_preview:
+                        console.print(f"[dim]Error: {error_preview}[/dim]")
                 else:
-                    print(f"Strategy {i} failed, trying next...")
+                    print(f"Strategy {i} failed")
+                    if error_preview:
+                        print(f"Error: {error_preview}")
                     
         except subprocess.TimeoutExpired:
             if console:
