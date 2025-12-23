@@ -1124,9 +1124,11 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 if isinstance(path, Path) and path.exists():
                     panpipe_binary = str(path)
                     break
-                elif isinstance(path, str) and shutil.which(path):
-                    panpipe_binary = path
-                    break
+                elif isinstance(path, str):
+                    import shutil as shutil_module
+                    if shutil_module.which(path):
+                        panpipe_binary = path
+                        break
             
             if panpipe_binary:
                 try:

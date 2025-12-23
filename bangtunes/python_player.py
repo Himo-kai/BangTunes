@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 try:
     from rich.console import Console
-    console = Console()
+    console: Optional[Console] = Console()
     RICH_AVAILABLE = True
 except ImportError:
     console = None
@@ -26,11 +26,11 @@ class PythonMusicPlayer:
         self.root = root
         self.config = config
         self.db_path = root / "library.db"
-        self.current_track = None
-        self.playlist = []
+        self.current_track: Optional[Dict[str, Any]] = None
+        self.playlist: List[Dict[str, Any]] = []
         self.playlist_index = 0
         self.is_playing = False
-        self.player_process = None
+        self.player_process: Optional[subprocess.Popen] = None
         self.shuffle = False
         self.repeat = False
         
