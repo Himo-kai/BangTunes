@@ -4,6 +4,7 @@ Command implementations for BangTunes CLI.
 Each command is implemented as a separate function that takes args, root, and config.
 """
 
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -797,7 +798,6 @@ def cmd_quickplay(args: Any, root: Path, config: Dict[str, Any]) -> int:
             print(f"🎵 Now playing: {title} by {artist}")
         
         # Try to play with available players
-        import subprocess
         import shutil
         
         # Check for available players
@@ -1113,7 +1113,6 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 print("Launching PanPipe interactive player...")
             
             # Try to launch the integrated PanPipe player
-            import subprocess
             import shutil
             
             # Look for the PanPipe binary
@@ -1205,14 +1204,55 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     print(f"Build error: {e}")
                 return 1
         
-        elif cmd in ['sync', 'player-status']:
-            if console:
-                console.print(f"[yellow]{cmd.title()} command not yet implemented[/yellow]")
-                console.print("[dim]This will integrate with the PanPipe player database[/dim]")
-            else:
-                print(f"{cmd.title()} command not yet implemented")
-                print("This will integrate with the PanPipe player database")
-            return 1
+        elif cmd == 'sync':
+            # Sync BangTunes library with player database
+            try:
+                from bangtunes.player_integration import create_integration
+                from bangtunes.config import load_config
+                
+                config = load_config(root)
+                integration = create_integration(root, config)
+                integration.sync_libraries()
+                return 0
+            except ImportError:
+                if console:
+                    console.print("[red]❌ Player integration not available[/red]")
+                    console.print("[dim]Run 'python bang_tunes.py setup-player' first[/dim]")
+                else:
+                    print("❌ Player integration not available")
+                    print("Run 'python bang_tunes.py setup-player' first")
+                return 1
+            except Exception as e:
+                if console:
+                    console.print(f"[red]❌ Sync failed: {e}[/red]")
+                else:
+                    print(f"❌ Sync failed: {e}")
+                return 1
+        
+        elif cmd == 'player-status':
+            # Show player integration status
+            try:
+                from bangtunes.player_integration import create_integration
+                from bangtunes.config import load_config
+                
+                config = load_config(root)
+                integration = create_integration(root, config)
+                integration.status()
+                return 0
+            except ImportError:
+                if console:
+                    console.print("[red]❌ Player integration not available[/red]")
+                    console.print("[dim]Run 'python bang_tunes.py setup-player' first[/dim]")
+                else:
+                    print("❌ Player integration not available")
+                    print("Run 'python bang_tunes.py setup-player' first")
+                return 1
+            except Exception as e:
+                if console:
+                    console.print(f"[red]❌ Status check failed: {e}[/red]")
+                else:
+                    print(f"❌ Status check failed: {e}")
+                return 1
         
         else:
             if console:
