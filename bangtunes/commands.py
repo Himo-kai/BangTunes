@@ -1428,8 +1428,11 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
     import os as os_module
 
     build_env = os_module.environ.copy()
-    build_env["RUSTFLAGS"] = ""  # Clear any inherited flags
-    build_env["CARGO_BUILD_TARGET"] = ""  # Clear any target overrides
+    # Important: "clearing" means removing the key, NOT setting it to "".
+    # Cargo interprets empty CARGO_BUILD_TARGET as "target was empty".
+    build_env.pop("CARGO_BUILD_TARGET", None)
+    build_env.pop("CARGO_TARGET_DIR", None)  # Avoid weird cross-target caches
+    build_env.pop("RUSTFLAGS", None)  # Remove, don't blank
 
     # Single canonical build command for Termux - no multiple strategies
     # No desktop targets, no invalid flags, just simple clean build

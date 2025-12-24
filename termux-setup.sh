@@ -49,6 +49,10 @@ echo "   This may take a few minutes..."
 # Update package lists
 pkg update -y
 
+# Prevent partial-upgrade Rust toolchain mismatches (common Termux failure mode)
+echo "   Upgrading existing packages to prevent version mismatches..."
+pkg upgrade -y || true
+
 # Install required system packages
 pkg install -y python ffmpeg git rust mpv
 
@@ -89,9 +93,10 @@ echo
 echo "🦀 Building Rust components..."
 if command -v cargo >/dev/null 2>&1; then
     echo "   Using Termux-optimized build process..."
-    # CRITICAL: Clear any desktop RUSTFLAGS that break Termux builds
-    export RUSTFLAGS=""
-    export CARGO_BUILD_TARGET=""
+    # Clear inherited desktop env safely (unset, don't blank)
+    unset RUSTFLAGS
+    unset CARGO_BUILD_TARGET
+    unset CARGO_TARGET_DIR
     if python bang_tunes.py setup-player; then
         echo "$(sym_ok) Rust player built successfully"
         RUST_AVAILABLE=true
