@@ -89,6 +89,9 @@ echo
 echo "🦀 Building Rust components..."
 if command -v cargo >/dev/null 2>&1; then
     echo "   Using Termux-optimized build process..."
+    # CRITICAL: Clear any desktop RUSTFLAGS that break Termux builds
+    export RUSTFLAGS=""
+    export CARGO_BUILD_TARGET=""
     if python bang_tunes.py setup-player; then
         echo "$(sym_ok) Rust player built successfully"
         RUST_AVAILABLE=true

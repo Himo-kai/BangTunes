@@ -1423,11 +1423,18 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
         else:
             print("✓ Using Termux pkg-managed Rust (no rustup needed)")
 
-    # Step 3: Try multiple build strategies optimized for Termux
+    # Step 3: Clean environment and try build strategies
+    # CRITICAL: Clear any desktop RUSTFLAGS that break Termux
+    import os as os_module
+    build_env = os_module.environ.copy()
+    build_env["RUSTFLAGS"] = ""  # Clear any inherited flags
+    build_env["CARGO_BUILD_TARGET"] = ""  # Clear any target overrides
+    
+    # Build strategies optimized for Termux (NO -C FLAGS TO CARGO!)
     build_strategies = [
-        # Strategy 1: Standard build (works best with Termux pkg-managed Rust)
+        # Strategy 1: Simple clean build - THIS IS THE SAFEST
         ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
-        # Strategy 2: Build with explicit host target
+        # Strategy 2: Try with explicit target if available
         [
             "cargo",
             "build",
@@ -1437,7 +1444,7 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
             "--target",
             "aarch64-unknown-linux-gnu",
         ],
-        # Strategy 3: Build with minimal features to reduce compilation complexity
+        # Strategy 3: Minimal features build
         [
             "cargo",
             "build",
@@ -1445,16 +1452,6 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
             "--bin",
             "panpipe_interactive",
             "--no-default-features",
-        ],
-        # Strategy 4: Build with specific optimization level
-        [
-            "cargo",
-            "build",
-            "--release",
-            "--bin",
-            "panpipe_interactive",
-            "-C",
-            "opt-level=2",
         ],
     ]
 
@@ -1470,6 +1467,7 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
             result = subprocess.run(
                 strategy,
                 cwd=root,
+                env=build_env,  # Use clean environment!
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minute timeout
