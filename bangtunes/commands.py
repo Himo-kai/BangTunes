@@ -1221,14 +1221,47 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
 
             if panpipe_binary:
                 try:
+                    # Check for debug mode
+                    debug_mode = os.environ.get("BANGTUNES_PLAYER_DEBUG", "").lower() in ["1", "true", "yes"]
+                    
+                    if debug_mode:
+                        if console:
+                            console.print("[yellow]🔧 Debug mode enabled for PanPipe[/yellow]")
+                            console.print("[dim]Set RUST_BACKTRACE=1 for full backtrace[/dim]")
+                        else:
+                            print("🔧 Debug mode enabled for PanPipe")
+                            print("Set RUST_BACKTRACE=1 for full backtrace")
+                    
                     if console:
                         console.print(
                             "[dim]Launching PanPipe interactive player...[/dim]"
                         )
                     else:
                         print("Launching PanPipe interactive player...")
-                    # Launch PanPipe (it will auto-discover music in the current directory)
-                    subprocess.run([panpipe_binary], check=False)
+                    
+                    # Set up environment for better debugging
+                    env = os.environ.copy()
+                    if debug_mode:
+                        env["RUST_BACKTRACE"] = env.get("RUST_BACKTRACE", "1")
+                        env["RUST_LOG"] = env.get("RUST_LOG", "info")
+                    
+                    # Launch PanPipe with proper environment
+                    result = subprocess.run([panpipe_binary], env=env, check=False)
+                    
+                    # Check exit code and provide helpful messages
+                    if result.returncode != 0:
+                        if console:
+                            console.print(f"[red]PanPipe exited with code {result.returncode}[/red]")
+                            if not debug_mode:
+                                console.print("[dim]Run with BANGTUNES_PLAYER_DEBUG=1 for more details[/dim]")
+                        else:
+                            print(f"PanPipe exited with code {result.returncode}")
+                            if not debug_mode:
+                                print("Run with BANGTUNES_PLAYER_DEBUG=1 for more details")
+                        
+                        # Fall through to Python player
+                        raise Exception(f"PanPipe exited with code {result.returncode}")
+                    
                     return 0
                 except Exception as e:
                     if console:

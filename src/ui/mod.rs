@@ -32,13 +32,20 @@ struct CleanupGuard;
 impl Drop for CleanupGuard {
     fn drop(&mut self) {
         // Force terminal cleanup - NO stdout usage to avoid stream conflicts!
+        // This runs even if the app panics, ensuring terminal restoration
         let _ = disable_raw_mode();
         
+        // Use separate stdout instance to avoid conflicts
         let mut stdout = io::stdout();
-        let _ = execute!(stdout, LeaveAlternateScreen, DisableMouseCapture);
         
-        // Force cursor show
+        // Best effort to restore everything
+        let _ = execute!(stdout, LeaveAlternateScreen);
+        let _ = execute!(stdout, DisableMouseCapture);
         let _ = execute!(stdout, cursor::Show);
+        
+        // Flush to ensure commands are sent
+        use std::io::Write;
+        let _ = stdout.flush();
     }
 }
 

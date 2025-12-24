@@ -2,7 +2,10 @@ use anyhow::Result;
 use tracing::{debug, info, error};
 use clap::Parser;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    cursor,
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, DisableMouseCapture},
+    execute,
+    terminal::{disable_raw_mode, LeaveAlternateScreen},
 };
 use fuzzy_matcher::{clangd::ClangdMatcher, FuzzyMatcher};
 use panpipe::{
@@ -20,6 +23,8 @@ use ratatui::{
     Frame,
 };
 use std::{
+    io,
+    panic,
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -78,8 +83,29 @@ fn init_logging(dev: bool) -> Result<()> {
     Ok(())
 }
 
+/// Force terminal restoration - called on panic and normal exit
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, LeaveAlternateScreen, DisableMouseCapture, cursor::Show);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install panic hook FIRST to ensure terminal cleanup on panic
+    let default_panic = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        // Restore terminal BEFORE printing panic info
+        restore_terminal();
+        
+        // Print panic info to stderr (which will be visible after terminal restore)
+        eprintln!("\n❌ PanPipe crashed! Terminal restored.");
+        eprintln!("Error details: {}", info);
+        
+        // Call the default panic handler for backtrace
+        default_panic(info);
+    }));
+    
     // Parse CLI arguments
     let args = Args::parse();
     
