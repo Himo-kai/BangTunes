@@ -1431,29 +1431,11 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
     build_env["RUSTFLAGS"] = ""  # Clear any inherited flags
     build_env["CARGO_BUILD_TARGET"] = ""  # Clear any target overrides
 
-    # Build strategies optimized for Termux (NO -C FLAGS TO CARGO!)
+    # Single canonical build command for Termux - no multiple strategies
+    # No desktop targets, no invalid flags, just simple clean build
     build_strategies = [
-        # Strategy 1: Simple clean build - THIS IS THE SAFEST
+        # Only one strategy - the simplest and most reliable
         ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
-        # Strategy 2: Try with explicit target if available
-        [
-            "cargo",
-            "build",
-            "--release",
-            "--bin",
-            "panpipe_interactive",
-            "--target",
-            "aarch64-unknown-linux-gnu",
-        ],
-        # Strategy 3: Minimal features build
-        [
-            "cargo",
-            "build",
-            "--release",
-            "--bin",
-            "panpipe_interactive",
-            "--no-default-features",
-        ],
     ]
 
     for i, strategy in enumerate(build_strategies, 1):
@@ -1474,6 +1456,33 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
                 timeout=300,  # 5 minute timeout
             )
 
+            # Check for toolchain mismatch FIRST
+            if result.stderr and any(marker in result.stderr for marker in [
+                "E0514",
+                "compiled by an incompatible version of rustc",
+                "found crate 'core'",
+                "found crate 'alloc'",
+                "found crate 'std'"
+            ]):
+                # TOOLCHAIN MISMATCH DETECTED - Show clear remediation
+                if console:
+                    console.print("\n[bold red]❌ Rust toolchain mismatch detected[/bold red]")
+                    console.print("[yellow]This happens when Termux partially upgrades Rust packages.[/yellow]\n")
+                    console.print("[bold]Required steps to fix:[/bold]")
+                    console.print("1. Run: [cyan]cargo clean[/cyan]")
+                    console.print("2. Run: [cyan]pkg update && pkg upgrade[/cyan]")
+                    console.print("3. Run: [cyan]pkg reinstall rust[/cyan]")
+                    console.print("4. Then re-run: [cyan]python bang_tunes.py setup-player[/cyan]\n")
+                else:
+                    print("\n❌ Rust toolchain mismatch detected")
+                    print("This happens when Termux partially upgrades Rust packages.\n")
+                    print("Required steps to fix:")
+                    print("1. Run: cargo clean")
+                    print("2. Run: pkg update && pkg upgrade")
+                    print("3. Run: pkg reinstall rust")
+                    print("4. Then re-run: python bang_tunes.py setup-player\n")
+                return 1  # Exit immediately on toolchain mismatch
+            
             if result.returncode == 0:
                 if console:
                     console.print(
