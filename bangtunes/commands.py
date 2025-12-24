@@ -1245,19 +1245,47 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                         env["RUST_BACKTRACE"] = env.get("RUST_BACKTRACE", "1")
                         env["RUST_LOG"] = env.get("RUST_LOG", "info")
                     
-                    # Launch PanPipe with proper environment
-                    result = subprocess.run([panpipe_binary], env=env, check=False)
+                    # Pick music directory deterministically
+                    # Prefer config value if present; otherwise use historical default
+                    music_dir_cfg = (
+                        config.get("paths", {}).get("music_dir")
+                        or config.get("music_dir")
+                    )
+                    if music_dir_cfg:
+                        music_dir = Path(music_dir_cfg).expanduser()
+                    else:
+                        music_dir = root / "downloads"
+                    
+                    # Ensure music directory exists
+                    if not music_dir.exists():
+                        if console:
+                            console.print(f"[yellow]Music directory not found: {music_dir}[/yellow]")
+                            console.print("[dim]Creating directory...[/dim]")
+                        else:
+                            print(f"Music directory not found: {music_dir}")
+                            print("Creating directory...")
+                        music_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Launch PanPipe with explicit music dir and stable cwd
+                    result = subprocess.run(
+                        [panpipe_binary, str(music_dir)],
+                        cwd=str(root),
+                        env=env,
+                        check=False
+                    )
                     
                     # Check exit code and provide helpful messages
                     if result.returncode != 0:
                         if console:
                             console.print(f"[red]PanPipe exited with code {result.returncode}[/red]")
                             if not debug_mode:
-                                console.print("[dim]Run with BANGTUNES_PLAYER_DEBUG=1 for more details[/dim]")
+                                console.print("[yellow]Try: BANGTUNES_PLAYER_DEBUG=1 python bang_tunes.py play[/yellow]")
+                            console.print("[dim]Alternative: python bang_tunes.py quickplay (basic player)[/dim]")
                         else:
                             print(f"PanPipe exited with code {result.returncode}")
                             if not debug_mode:
-                                print("Run with BANGTUNES_PLAYER_DEBUG=1 for more details")
+                                print("Try: BANGTUNES_PLAYER_DEBUG=1 python bang_tunes.py play")
+                            print("Alternative: python bang_tunes.py quickplay (basic player)")
                         
                         # Fall through to Python player
                         raise Exception(f"PanPipe exited with code {result.returncode}")
