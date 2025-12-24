@@ -1426,10 +1426,11 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
     # Step 3: Clean environment and try build strategies
     # CRITICAL: Clear any desktop RUSTFLAGS that break Termux
     import os as os_module
+
     build_env = os_module.environ.copy()
     build_env["RUSTFLAGS"] = ""  # Clear any inherited flags
     build_env["CARGO_BUILD_TARGET"] = ""  # Clear any target overrides
-    
+
     # Build strategies optimized for Termux (NO -C FLAGS TO CARGO!)
     build_strategies = [
         # Strategy 1: Simple clean build - THIS IS THE SAFEST
