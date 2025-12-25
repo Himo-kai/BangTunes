@@ -230,8 +230,12 @@ class PythonMusicPlayer:
             print("  r - Toggle repeat")
             print("  q - Quit\n")
 
-        # Start with first track
-        self.play_track(0)
+        # Don't autostart in fallback mode - wait for user input
+        # (This is a fallback player, should be less aggressive)
+        if console:
+            console.print("[dim]Press Enter to start playing, or use commands above[/dim]")
+        else:
+            print("Press Enter to start playing, or use commands above")
 
         # Simple input loop
         try:
@@ -258,6 +262,7 @@ class PythonMusicPlayer:
                     break
 
                 if cmd == "q":
+                    self.stop()  # CRITICAL: Stop the player process before exiting!
                     break
                 elif cmd == "n":
                     self.next_track()
@@ -277,6 +282,9 @@ class PythonMusicPlayer:
                         console.print(f"[yellow]{msg}[/yellow]")
                     else:
                         print(msg)
+                elif cmd == "" and not self.current_track:
+                    # Start playing on Enter if nothing is playing
+                    self.play_track(0)
 
         except KeyboardInterrupt:
             pass

@@ -43,6 +43,11 @@ struct Args {
     #[arg(long)]
     dev: bool,
     
+    /// Optional music directory to scan (overrides config music_directories)
+    /// This exists to support BangTunes launching PanPipe with its downloads folder
+    #[arg(value_name = "MUSIC_DIR")]
+    music_dir: Option<PathBuf>,
+    
     /// Start playing a specific track file
     #[arg(long, value_name = "PATH")]
     play_track: Option<PathBuf>,
@@ -124,7 +129,13 @@ async fn main() -> Result<()> {
     };
     
     // Initialize configuration
-    let config = Config::load()?;
+    let mut config = Config::load()?;
+    
+    // If BangTunes supplied a music dir, honor it (override config)
+    if let Some(dir) = args.music_dir.clone() {
+        info!("Using command-line music directory: {:?}", dir);
+        config.music_directories = vec![dir];
+    }
     
     // Print startup banner
     println!("🎵 BangTunes - Terminal Music Player");
