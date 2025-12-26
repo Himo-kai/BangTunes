@@ -103,4 +103,4 @@ lto = "thin"
 codegen-units = 1
 opt-level = "z"     # or "s" if you want a speed/size compromise
 strip = true
-panic = "abort"
+panic = "unwind"    # Changed from abort - allows stack traces and terminal cleanup on panic

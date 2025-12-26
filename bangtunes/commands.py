@@ -1201,23 +1201,42 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 print("🎵 BangTunes Player")
 
             # Try to find and launch Rust PanPipe first
+            # Respect CARGO_TARGET_DIR when set (common in Termux / custom builds)
+            cargo_target_dir = os.environ.get("CARGO_TARGET_DIR")
+            if cargo_target_dir:
+                target_root = Path(cargo_target_dir).expanduser()
+                if not target_root.is_absolute():
+                    target_root = (root / target_root).resolve()
+            else:
+                target_root = (root / "target").resolve()
+
+            # Prefer repo-built binaries, then (optionally) PATH
             panpipe_paths = [
-                root / "target" / "release" / "panpipe_interactive",
-                root / "panpipe_interactive",
-                "panpipe_interactive",
+                target_root / "release" / "panpipe_interactive",
+                target_root / "debug" / "panpipe_interactive",
+                (root / "target" / "release" / "panpipe_interactive").resolve(),
+                (root / "target" / "debug" / "panpipe_interactive").resolve(),
+                (root / "panpipe_interactive").resolve(),
             ]
+
+            allow_path_panpipe = os.environ.get("BANGTUNES_ALLOW_PATH_PANPIPE", "").lower() in ("1", "true", "yes")
 
             panpipe_binary = None
             for path in panpipe_paths:
-                if isinstance(path, Path) and path.exists():
+                if path.exists():
                     panpipe_binary = str(path)
+                    if console:
+                        console.print(f"[dim]Found PanPipe at: {panpipe_binary}[/dim]")
                     break
-                elif isinstance(path, str):
-                    import shutil as shutil_module
 
-                    if shutil_module.which(path):
-                        panpipe_binary = path
-                        break
+            # Only fall back to PATH if explicitly allowed
+            if not panpipe_binary and allow_path_panpipe:
+                import shutil as shutil_module
+                p = shutil_module.which("panpipe_interactive")
+                if p:
+                    panpipe_binary = p
+                    if console:
+                        console.print(f"[yellow]Using PATH PanPipe: {panpipe_binary}[/yellow]")
 
             if panpipe_binary:
                 try:
@@ -1241,6 +1260,14 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     
                     # Set up environment for better debugging
                     env = os.environ.copy()
+                    
+                    # Termux: enable backtraces by default when PanPipe misbehaves
+                    # This is low-risk and makes crashes diagnosable
+                    is_termux = ("TERMUX_VERSION" in env) or str(root).startswith("/data/data/com.termux")
+                    if is_termux:
+                        env.setdefault("RUST_BACKTRACE", "1")
+                        env.setdefault("RUST_LOG", "info")
+                    
                     if debug_mode:
                         env["RUST_BACKTRACE"] = env.get("RUST_BACKTRACE", "1")
                         env["RUST_LOG"] = env.get("RUST_LOG", "info")
@@ -1266,9 +1293,25 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                             print("Creating directory...")
                         music_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # Launch PanPipe with explicit music dir and stable cwd
+                    # Pass music_dir ONLY if we are sure we're using the repo-built binary
+                    # If PATH panpipe is allowed, it may be an older CLI that rejects positional args
+                    try:
+                        binary_path = Path(panpipe_binary).resolve()
+                        root_resolved = root.resolve()
+                        is_repo_binary = str(binary_path).startswith(str(root_resolved))
+                    except Exception:
+                        is_repo_binary = False
+                    
+                    # Launch PanPipe with explicit music dir (only for repo binaries) and stable cwd
+                    if is_repo_binary:
+                        cmd_args = [panpipe_binary, str(music_dir)]
+                    else:
+                        cmd_args = [panpipe_binary]
+                        if console:
+                            console.print("[yellow]Warning: Using external PanPipe, not passing music_dir[/yellow]")
+                    
                     result = subprocess.run(
-                        [panpipe_binary, str(music_dir)],
+                        cmd_args,
                         cwd=str(root),
                         env=env,
                         check=False
@@ -1276,18 +1319,26 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                     
                     # Check exit code and provide helpful messages
                     if result.returncode != 0:
-                        if console:
-                            console.print(f"[red]PanPipe exited with code {result.returncode}[/red]")
-                            if not debug_mode:
-                                console.print("[yellow]Try: BANGTUNES_PLAYER_DEBUG=1 python bang_tunes.py play[/yellow]")
-                            console.print("[dim]Alternative: python bang_tunes.py quickplay (basic player)[/dim]")
-                        else:
-                            print(f"PanPipe exited with code {result.returncode}")
-                            if not debug_mode:
-                                print("Try: BANGTUNES_PLAYER_DEBUG=1 python bang_tunes.py play")
-                            print("Alternative: python bang_tunes.py quickplay (basic player)")
+                        allow_fallback = os.environ.get("BANGTUNES_ALLOW_FALLBACK_PLAYER", "").lower() in ("1", "true", "yes")
+                        msg = f"PanPipe failed (exit {result.returncode})."
                         
-                        # Fall through to Python player
+                        if console:
+                            console.print(f"[red]{msg}[/red]")
+                            console.print("[dim]Tip: run with BANGTUNES_PLAYER_DEBUG=1 for more logs.[/dim]")
+                            console.print("[dim]Alternative: python bang_tunes.py quickplay (basic player)[/dim]")
+                            if not allow_fallback:
+                                console.print("[dim]If you really want fallback: set BANGTUNES_ALLOW_FALLBACK_PLAYER=1[/dim]")
+                        else:
+                            print(msg)
+                            print("Tip: run with BANGTUNES_PLAYER_DEBUG=1 for more logs.")
+                            print("Alternative: python bang_tunes.py quickplay (basic player)")
+                            if not allow_fallback:
+                                print("If you really want fallback: set BANGTUNES_ALLOW_FALLBACK_PLAYER=1")
+                        
+                        if not allow_fallback:
+                            return result.returncode
+                        
+                        # Optional fallback: only if explicitly enabled
                         raise Exception(f"PanPipe exited with code {result.returncode}")
                     
                     return 0
