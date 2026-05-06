@@ -2616,12 +2616,12 @@ impl InteractiveApp {
         let volume_empty = "░".repeat(10 - (volume * 10.0) as usize);
         
         let repeat_symbol = match repeat_mode {
-            RepeatMode::Off => "🔁",
-            RepeatMode::All => "🔁",
-            RepeatMode::One => "🔂",
+            RepeatMode::Off => "⭘",  // Empty circle = off
+            RepeatMode::All => "🔁", // Repeat all
+            RepeatMode::One => "🔂", // Repeat one
         };
         
-        let shuffle_symbol = if is_shuffled { "🔀" } else { "🔀" };
+        let shuffle_symbol = if is_shuffled { "🔀" } else { "➡" }; // Shuffle on vs. sequential
         
         let controls_text = vec![
             Line::from(vec![
@@ -2663,47 +2663,57 @@ impl InteractiveApp {
     
     fn render_settings(f: &mut Frame, area: Rect) {
         let settings_content = vec![
-            Line::from(vec![Span::styled("⚙️ Settings", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled("⚙️ Settings & Help", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
             Line::from(""),
-            Line::from(vec![Span::styled("⌨️ Keyboard Controls:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled("📑 Tabs:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from("  1 / Tab       Library (browse all tracks)"),
+            Line::from("  2             Playlists (create, manage, expand)"),
+            Line::from("  3             Metadata Editor (fix track info)"),
+            Line::from("  4             Settings (this page)"),
+            Line::from(""),
+            Line::from(vec![Span::styled("⌨️ Playback Controls:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  Space         Toggle play/pause"),
-            Line::from("  p             Play current track"),
+            Line::from("  p             Play selected track"),
             Line::from("  s             Stop playback"),
             Line::from("  n / →         Next track"),
             Line::from("  b / ←         Previous track"),
-            Line::from("  ↑ / ↓         Navigate track list"),
-            Line::from("  Enter         Select/play highlighted track"),
             Line::from("  + / =         Volume up"),
             Line::from("  -             Volume down"),
-            Line::from("  z             Toggle shuffle mode"),
+            Line::from("  z             Toggle smart shuffle"),
             Line::from("  r             Toggle repeat mode"),
-            Line::from("  F5            Refresh library"),
-            Line::from("  q / Esc       Quit player"),
             Line::from(""),
-            Line::from(vec![Span::styled("🎵 Audio Configuration:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-            Line::from("  Volume: Controlled via +/- keys"),
-            Line::from("  Repeat Mode: Controlled via 'r' key"),
-            Line::from("  Shuffle: Controlled via 'z' key"),
+            Line::from(vec![Span::styled("🎵 Library Features:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from("  ↑ / ↓         Navigate tracks"),
+            Line::from("  /             Search library"),
+            Line::from("  f             Toggle favorite (⭐)"),
+            Line::from("  a             Add track to playlist"),
+            Line::from("  F5            Refresh library scan"),
             Line::from(""),
-            Line::from(vec![Span::styled("📁 Library Management:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-            Line::from("  Music Directory: Scanned on startup"),
-            Line::from("  Metadata Editor: Available in tab 2"),
+            Line::from(vec![Span::styled("📋 Playlist Features:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from("  Enter         Expand/collapse playlist"),
+            Line::from("  Shift+N       Create new playlist"),
+            Line::from("  Shift+R       Rename playlist"),
+            Line::from("  Shift+Q       Load playlist to queue"),
+            Line::from("  x             Remove track from playlist"),
+            Line::from("  Del           Delete playlist"),
             Line::from(""),
-            Line::from(vec![Span::styled("🔮 Future Features:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-            Line::from("  ⭐ Favorites System - Coming Soon"),
-            Line::from("  📋 Custom Playlists - Coming Soon"),
-            Line::from("  🎯 Queue Management - Coming Soon"),
-            Line::from("  💾 Persistent Settings - Coming Soon"),
+            Line::from(vec![Span::styled("✏️ Metadata Editor:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from("  t             Edit title"),
+            Line::from("  a             Edit artist"),
+            Line::from("  Tab           Apply suggestion"),
+            Line::from("  b             Bulk apply all suggestions"),
+            Line::from("  Shift+S       Save all changes"),
             Line::from(""),
-            Line::from(vec![Span::styled("🔧 Configuration:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-            Line::from("  Audio Buffer: 65KB (optimized for stability)"),
-            Line::from("  Sample Rate: 44.1kHz"),
-            Line::from("  Channels: Stereo"),
+            Line::from(vec![Span::styled("🔧 Technical:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from("  Smart Shuffle: Behavior-weighted track selection"),
+            Line::from("  Favorites: Stored in SQLite behavior database"),
+            Line::from("  Queue: Manual queue + playlist loading"),
             Line::from(""),
             Line::from(vec![Span::styled("💡 Tips:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))]),
-            Line::from("  • Press ? for help overlay with all keybindings"),
-            Line::from("  • Use 1/2/3 to switch between tabs"),
-            Line::from("  • Lower system volume to ~75% for best audio quality"),
+            Line::from("  • Press ? for context-sensitive help overlay"),
+            Line::from("  • Favorites boost shuffle weight by 2x"),
+            Line::from("  • Smart shuffle avoids recently played tracks"),
+            Line::from("  • Press q or Esc to quit"),
         ];
         
         let settings_paragraph = Paragraph::new(settings_content)
