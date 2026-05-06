@@ -298,7 +298,7 @@ def download_batch(
             graceful_sigint_func() as flag,
             Progress(
                 SpinnerColumn(),
-                TextColumn("[bold blue]{task.description}", no_wrap=True, min_width=40),
+                TextColumn("[bold blue]{task.description}"),
                 BarColumn(),
                 MofNCompleteColumn(),
                 TimeElapsedColumn(),
