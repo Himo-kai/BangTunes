@@ -1,11 +1,10 @@
 // Terminal UI - the face of BangTunes
 // Built with ratatui because ncurses is a pain and this actually works
+// Note: Main TUI app is in src/bin/panpipe_interactive.rs
 
-mod app;        // main application state and event loop
 mod components; // reusable UI widgets
 pub mod events; // keyboard/mouse event handling
 
-pub use app::App;
 pub use events::{AppEvent, EventHandler};
 
 use anyhow::Result;
