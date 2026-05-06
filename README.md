@@ -39,14 +39,37 @@ Bang Tunes helps you discover new music based on tracks you already love. Starte
 - **Decent Audio Quality**: High-quality opus files with album art embedded
 - **Plays Nice**: Doesn't hammer YouTube's servers, rotates user agents sensibly
 
-### Built-in Music Player
+### Built-in Music Player (PanPipe Interactive)
 
-- **Learns Your Taste**: Tracks what you skip and what you replay, shuffles accordingly
-- **Terminal Interface**: Clean terminal UI thats fully keyboard driven
-- **Interactive Metadata Editor**: Standalone tool to search, browse, and edit track information
-- **Plays Everything**: MP3, Opus, M4A, whatever you throw at it
-- **Smart Deduplication**: Knows when you've moved files around, won't lose track
-- **Everything Connected**: Downloads and player share the same database so no sync headaches
+**Intelligent Playback:**
+- **Smart Shuffle**: Behavior-weighted selection favors tracks you love, avoids recently played
+- **Favorites System**: Mark tracks with ⭐ for 1.8x shuffle boost
+- **Skip Learning**: Tracks skip patterns and completion rates to refine shuffle weights
+- **Recently Played Tracking**: Prevents repetition with intelligent history management
+
+**Queue Management:**
+- **Manual Queue**: Add tracks to play next (`e`) or end of queue (`E`)
+- **Queue Overlay**: Visual queue display with navigation (`Q` to toggle)
+- **Playlist→Queue**: Load entire playlists into queue with one keypress
+- **Queue Priority**: Queue → Playlist → Smart Shuffle playback order
+
+**Playlist Features:**
+- **Full CRUD**: Create, rename, delete playlists with keyboard shortcuts
+- **Add/Remove Tracks**: Build playlists from library, remove unwanted tracks
+- **Tree View**: Expandable playlist display with track counts
+- **Load to Queue**: Convert playlists to queue for sequential playback
+
+**User Interface:**
+- **Keyboard-Driven**: 100% keyboard navigation, no mouse required
+- **Multi-Tab Layout**: Library, Playlists, Metadata Editor, Settings
+- **Real-Time Status**: Now playing, queue count, playback position
+- **Help Overlay**: Press `?` for complete keybinding reference
+
+**Technical:**
+- **Persistent Behavior**: All listening data saved to SQLite
+- **Deterministic UUIDs**: Stable track IDs survive library rescans
+- **Multi-Format Support**: MP3, Opus, M4A, FLAC, and more
+- **Database Integration**: Shares library with BangTunes discovery system
 
 - Uses yt-dlp / YouTube Music for personal library building. Please respect YouTube's Terms of Service and your local laws.
 
