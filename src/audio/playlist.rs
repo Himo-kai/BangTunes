@@ -309,6 +309,18 @@ impl PlaylistManager {
         
         Ok(())
     }
+    
+    /// Remove a track from a playlist
+    pub fn remove_track_from_playlist(&mut self, playlist_id: &str, track_path: &Path) -> anyhow::Result<()> {
+        if let Some(playlist) = self.playlists.get_mut(playlist_id) {
+            playlist.remove_track(track_path);
+            playlist.modified_at = chrono::Utc::now();
+            let playlist_clone = playlist.clone();
+            self.save_playlist(&playlist_clone)?;
+            info!("Removed track from playlist {}: {}", playlist_id, track_path.display());
+        }
+        Ok(())
+    }
 
     /// List all playlists
     pub fn list_playlists(&self) -> Vec<&Playlist> {

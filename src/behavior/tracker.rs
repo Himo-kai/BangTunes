@@ -199,4 +199,28 @@ impl BehaviorTracker {
         // Note: file_path is required but we don't have it here, so we use a placeholder
         self.database.save_track_metadata(track_id, "unknown_path", Some(title), Some(artist), Some(album), None, None).await
     }
+    
+    /// Toggle the "favorite" tag on a track.
+    /// Returns true if the track is now a favorite, false if it was removed.
+    pub async fn toggle_favorite(&mut self, track_id: Uuid) -> Result<bool> {
+        let mut behavior = self.database.get_track_behavior(track_id).await?
+            .unwrap_or_else(|| TrackBehavior::new(track_id));
+        
+        let is_now_favorite = if behavior.tags.contains(&"favorite".to_string()) {
+            behavior.tags.retain(|t| t != "favorite");
+            false
+        } else {
+            behavior.tags.push("favorite".to_string());
+            true
+        };
+        
+        self.database.save_track_behavior(&behavior).await?;
+        Ok(is_now_favorite)
+    }
+    
+    /// Check if a track is currently favorited.
+    pub async fn is_favorite(&self, track_id: Uuid) -> Result<bool> {
+        let behavior = self.database.get_track_behavior(track_id).await?;
+        Ok(behavior.map_or(false, |b| b.tags.contains(&"favorite".to_string())))
+    }
 }

@@ -41,14 +41,20 @@ impl Track {
             .map(AudioFormat::from_extension)
             .unwrap_or(AudioFormat::Unknown);
 
+        // Path-based deterministic UUID — fast, no file I/O, stable for fixed-location files
+        // NOTE: If we ever add file move/rename features, behavior records will need migration
+        // since the UUID is tied to the file path. For BangTunes' stable downloads/ directory,
+        // this is the right tradeoff (fast startup vs content-based dedup).
+        let id = Uuid::new_v5(&Uuid::NAMESPACE_OID, file_path.to_string_lossy().as_bytes());
+
         Self {
-            id: Uuid::new_v4(),
+            id,
             file_path,
             metadata: TrackMetadata::default(),
             format,
             file_size: 0,
             duration: None,
-            content_hash: None,
+            content_hash: None, // computed lazily when needed for dedup
         }
     }
 
@@ -61,6 +67,7 @@ impl Track {
     }
 
     /// Compute xxhash64 of file content for deduplication and move detection
+    /// Only called explicitly when dedup is needed — not during initial scan for performance
     pub fn compute_content_hash(&mut self) -> Result<u64> {
         if let Some(hash) = self.content_hash {
             return Ok(hash);
@@ -76,6 +83,15 @@ impl Track {
         let hash = xxh64(&buffer, 0);
         self.content_hash = Some(hash);
         Ok(hash)
+    }
+
+    /// Compute and cache content hash if not already cached
+    /// Use this when you need the hash for dedup but want to avoid redundant I/O
+    pub fn compute_and_cache_hash(&mut self) -> Option<u64> {
+        if self.content_hash.is_none() {
+            self.content_hash = self.compute_content_hash().ok();
+        }
+        self.content_hash
     }
 
     /// Update duration based on actual playback time (duration learning)

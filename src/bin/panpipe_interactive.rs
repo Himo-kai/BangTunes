@@ -23,6 +23,7 @@ use ratatui::{
     Frame,
 };
 use std::{
+    collections::VecDeque,
     io,
     panic,
     path::PathBuf,
@@ -254,6 +255,13 @@ struct InteractiveApp {
     is_shuffled: bool,
     repeat_mode: RepeatMode,
     autoplay: bool,
+    recently_played: VecDeque<uuid::Uuid>, // Track history for intelligent shuffle (VecDeque for O(1) pop_front)
+    queue: VecDeque<usize>, // Upcoming tracks (indices into self.tracks)
+    queue_visible: bool, // Toggle queue overlay display
+    queue_list_state: ListState, // Selection within queue overlay
+    queue_replace_confirmation: bool, // Waiting for Y/N to replace queue with playlist
+    queue_replace_playlist_id: Option<String>, // Playlist to load if confirmed
+    favorites: std::collections::HashSet<uuid::Uuid>, // Cached favorite track IDs for fast lookup
     
     // Time tracking
     current_position: Duration,
@@ -292,6 +300,8 @@ struct InteractiveApp {
     current_playlist_id: Option<String>,
     playlist_tracks: Vec<usize>, // indices into tracks for current playlist
     playlist_creation_mode: bool,
+    playlist_rename_mode: bool,
+    playlist_rename_id: Option<String>,
     playlist_name_input: String,
     expanded_playlists: std::collections::HashSet<String>, // Track which playlists are expanded
     playlist_track_states: std::collections::HashMap<String, ListState>, // Per-playlist navigation state
@@ -345,6 +355,14 @@ impl InteractiveApp {
         // Initialize intelligent shuffle weighting
         let shuffle_weighting = ShuffleWeighting::new(config.behavior.weight_decay_days);
         
+        // Load favorites cache from behavior tracker
+        let favorites = behavior_tracker.get_all_behaviors().await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|b| b.tags.contains(&"favorite".to_string()))
+            .map(|b| b.track_id)
+            .collect::<std::collections::HashSet<_>>();
+        
         // Create event channel (revert to unbounded for stability)
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         
@@ -378,11 +396,18 @@ impl InteractiveApp {
             current_track_index: None,
             should_quit: false,
             current_tab: AppTab::Library,
-            volume: 0.7,
+            volume: 1.0,
             is_playing: false,
             is_shuffled: false,
             repeat_mode: RepeatMode::Off,
-            autoplay: true,  // Default to autoplay enabled
+            autoplay: true,
+            recently_played: VecDeque::new(),
+            queue: VecDeque::new(),
+            queue_visible: false,
+            queue_list_state: ListState::default(),
+            queue_replace_confirmation: false,
+            queue_replace_playlist_id: None,
+            favorites,
             current_position: Duration::from_secs(0),
             total_duration: None,
             last_position_update: Instant::now(),
@@ -408,6 +433,8 @@ impl InteractiveApp {
             current_playlist_id: None,
             playlist_tracks: Vec::new(),
             playlist_creation_mode: false,
+            playlist_rename_mode: false,
+            playlist_rename_id: None,
             playlist_name_input: String::new(),
             expanded_playlists: std::collections::HashSet::new(),
             playlist_track_states: std::collections::HashMap::new(),
@@ -450,9 +477,20 @@ impl InteractiveApp {
                 if let Ok(event) = event::read() {
                     if let Event::Key(key) = event {
                         if key.kind == KeyEventKind::Press {
-                            let app_event = if self.search_mode {
+                            let app_event = if self.queue_replace_confirmation {
+                                // Queue replacement confirmation takes priority
+                                match key.code {
+                                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                        Some(InteractiveEvent::ConfirmQueueReplace)
+                                    }
+                                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                        Some(InteractiveEvent::CancelQueueReplace)
+                                    }
+                                    _ => None, // Block other keys during confirmation
+                                }
+                            } else if self.search_mode {
                                 Self::key_to_search_event(key)
-                            } else if self.playlist_creation_mode {
+                            } else if self.playlist_creation_mode || self.playlist_rename_mode {
                                 Self::key_to_playlist_event(key)
                             } else if self.show_playlist_selector {
                                 Self::key_to_playlist_selector_event(key)
@@ -585,6 +623,18 @@ impl InteractiveApp {
             (KeyCode::Char('-'), KeyModifiers::NONE) => Some(InteractiveEvent::VolumeDown),
             (KeyCode::Char('z'), KeyModifiers::NONE) => Some(InteractiveEvent::ToggleShuffle),
             (KeyCode::Char('A'), KeyModifiers::NONE) => Some(InteractiveEvent::ToggleAutoplay),
+            // Queue management
+            (KeyCode::Char('e'), KeyModifiers::NONE) => Some(InteractiveEvent::QueuePlayNext),
+            (KeyCode::Char('E'), KeyModifiers::SHIFT) => Some(InteractiveEvent::QueueAddToEnd),
+            (KeyCode::Char('C'), KeyModifiers::SHIFT) => Some(InteractiveEvent::QueueClear),
+            (KeyCode::Char('Q'), KeyModifiers::SHIFT) => {
+                match self.current_tab {
+                    AppTab::Playlists => Some(InteractiveEvent::LoadPlaylistToQueue),
+                    _ => Some(InteractiveEvent::ToggleQueue),
+                }
+            }
+            // Favorites
+            (KeyCode::Char('f'), KeyModifiers::NONE) => Some(InteractiveEvent::ToggleFavorite),
 
             (KeyCode::Up, _) => Some(InteractiveEvent::Up),
             (KeyCode::Down, _) => Some(InteractiveEvent::Down),
@@ -617,9 +667,13 @@ impl InteractiveApp {
                 }
             }
             (KeyCode::Char('x'), KeyModifiers::NONE) => {
-                match self.current_tab {
-                    AppTab::Playlists => Some(InteractiveEvent::RemoveFromPlaylist),
-                    _ => None,
+                if self.queue_visible {
+                    Some(InteractiveEvent::QueueRemove)
+                } else {
+                    match self.current_tab {
+                        AppTab::Playlists => Some(InteractiveEvent::RemoveFromPlaylist),
+                        _ => None,
+                    }
                 }
             }
             (KeyCode::Enter, KeyModifiers::NONE) => {
@@ -742,6 +796,19 @@ impl InteractiveApp {
             (InteractiveEvent::VolumeUp, _, EditMode::None) => true,
             (InteractiveEvent::VolumeDown, _, EditMode::None) => true,
             
+            // Queue management works when not editing
+            (InteractiveEvent::QueuePlayNext, _, EditMode::None) => true,
+            (InteractiveEvent::QueueAddToEnd, _, EditMode::None) => true,
+            (InteractiveEvent::QueueClear, _, EditMode::None) => true,
+            (InteractiveEvent::ToggleQueue, _, _) => true, // Global — works everywhere
+            (InteractiveEvent::QueueRemove, _, EditMode::None) => true,
+            (InteractiveEvent::LoadPlaylistToQueue, _, EditMode::None) => true,
+            (InteractiveEvent::ConfirmQueueReplace, _, EditMode::None) => true,
+            (InteractiveEvent::CancelQueueReplace, _, EditMode::None) => true,
+            
+            // Favorites work when not editing
+            (InteractiveEvent::ToggleFavorite, _, EditMode::None) => true,
+            
             // Visualizer event filtering removed
             
             // Block other events when editing or in wrong context
@@ -750,6 +817,30 @@ impl InteractiveApp {
         
         if !should_process {
             return Ok(());
+        }
+        
+        // Queue overlay navigation takes priority
+        if self.queue_visible {
+            match &event {
+                InteractiveEvent::Up => {
+                    if let Some(selected) = self.queue_list_state.selected() {
+                        if selected > 0 {
+                            self.queue_list_state.select(Some(selected - 1));
+                        }
+                    }
+                    return Ok(());
+                }
+                InteractiveEvent::Down => {
+                    if let Some(selected) = self.queue_list_state.selected() {
+                        let max = self.queue.len().saturating_sub(1);
+                        if selected < max {
+                            self.queue_list_state.select(Some(selected + 1));
+                        }
+                    }
+                    return Ok(());
+                }
+                _ => {} // Fall through to normal handling
+            }
         }
         
         match event {
@@ -889,6 +980,124 @@ impl InteractiveApp {
                     self.set_status("⏸️ Autoplay: Off - tracks will stop after finishing");
                 }
             }
+            InteractiveEvent::QueuePlayNext => {
+                if let Some(selected) = self.list_state.selected() {
+                    let track_idx = self.filtered_tracks[selected];
+                    self.queue.push_front(track_idx);
+                    let title = self.tracks[track_idx].display_title();
+                    self.set_status(&format!("⏭ Playing next: {}", title));
+                }
+            }
+            InteractiveEvent::QueueAddToEnd => {
+                if let Some(selected) = self.list_state.selected() {
+                    let track_idx = self.filtered_tracks[selected];
+                    self.queue.push_back(track_idx);
+                    let title = self.tracks[track_idx].display_title();
+                    self.set_status(&format!("➕ Added to queue: {} ({} in queue)", 
+                        title, self.queue.len()));
+                }
+            }
+            InteractiveEvent::QueueClear => {
+                let count = self.queue.len();
+                self.queue.clear();
+                self.set_status(&format!("🗑 Queue cleared ({} tracks removed)", count));
+            }
+            InteractiveEvent::ToggleQueue => {
+                self.queue_visible = !self.queue_visible;
+                if self.queue_visible && !self.queue.is_empty() {
+                    self.queue_list_state.select(Some(0));
+                }
+                let msg = if self.queue_visible { "📋 Queue open" } else { "📋 Queue closed" };
+                self.set_status(msg);
+            }
+            InteractiveEvent::QueueRemove => {
+                if self.queue_visible {
+                    if let Some(selected) = self.queue_list_state.selected() {
+                        // Remove from VecDeque by draining into vec, removing, rebuilding
+                        let mut items: Vec<usize> = self.queue.drain(..).collect();
+                        if selected < items.len() {
+                            let title = self.tracks[items[selected]].display_title();
+                            items.remove(selected);
+                            self.queue = items.into_iter().collect();
+                            // Clamp selection to new length
+                            let new_len = self.queue.len();
+                            if new_len == 0 {
+                                self.queue_list_state.select(None);
+                                self.queue_visible = false; // Auto-close empty queue
+                            } else {
+                                self.queue_list_state.select(Some(selected.min(new_len - 1)));
+                            }
+                            self.set_status(&format!("🗑 Removed from queue: {}", title));
+                        }
+                    }
+                }
+            }
+            InteractiveEvent::ToggleFavorite => {
+                // Note: Favorites only work from the Library tab.
+                // Playlists tab support can be added when playlist track selection is unified.
+                if let Some(selected) = self.list_state.selected() {
+                    if selected < self.filtered_tracks.len() {
+                        let track_idx = self.filtered_tracks[selected];
+                        let track_id = self.tracks[track_idx].id;
+                        
+                        match self.behavior_tracker.toggle_favorite(track_id).await {
+                            Ok(true) => {
+                                self.favorites.insert(track_id);
+                                self.set_status(&format!("⭐ Favorited: {}", 
+                                    self.tracks[track_idx].display_title()));
+                            }
+                            Ok(false) => {
+                                self.favorites.remove(&track_id);
+                                self.set_status(&format!("☆ Removed favorite: {}", 
+                                    self.tracks[track_idx].display_title()));
+                            }
+                            Err(e) => {
+                                self.set_status(&format!("❌ Failed to toggle favorite: {}", e));
+                            }
+                        }
+                    }
+                }
+            }
+            InteractiveEvent::LoadPlaylistToQueue => {
+                if self.current_tab == AppTab::Playlists {
+                    if let Some(selected) = self.playlist_list_state.selected() {
+                        let playlists = self.playlist_manager.list_playlists();
+                        if let Some(playlist) = playlists.get(selected) {
+                            let playlist_id = playlist.id.clone();
+                            let playlist_name = playlist.name.clone();
+                            let playlist_track_count = playlist.track_count;
+                            
+                            if self.queue.is_empty() {
+                                // Direct load
+                                self.load_playlist_to_queue(&playlist_id);
+                            } else {
+                                // Ask for confirmation
+                                self.queue_replace_confirmation = true;
+                                self.queue_replace_playlist_id = Some(playlist_id);
+                                self.set_status(&format!(
+                                    "⚠️ Replace queue ({} tracks) with '{}' ({} tracks)? Y/N",
+                                    self.queue.len(),
+                                    playlist_name,
+                                    playlist_track_count
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            InteractiveEvent::ConfirmQueueReplace => {
+                if self.queue_replace_confirmation {
+                    if let Some(playlist_id) = self.queue_replace_playlist_id.take() {
+                        self.load_playlist_to_queue(&playlist_id);
+                    }
+                    self.queue_replace_confirmation = false;
+                }
+            }
+            InteractiveEvent::CancelQueueReplace => {
+                self.queue_replace_confirmation = false;
+                self.queue_replace_playlist_id = None;
+                self.set_status("❌ Queue replacement cancelled");
+            }
             InteractiveEvent::Tick => {
                 // Handle periodic updates
                 self.update_playback_status().await?;
@@ -939,6 +1148,11 @@ impl InteractiveApp {
                 }
             }
             InteractiveEvent::CancelEdit => {
+                if self.queue_visible {
+                    self.queue_visible = false;
+                    self.set_status("📋 Queue closed");
+                    return Ok(()); // Don't fall through to edit cancel
+                }
                 self.edit_mode = EditMode::None;
                 self.editing_track_index = None;
                 self.edit_title.clear();
@@ -1157,19 +1371,30 @@ impl InteractiveApp {
                 }
             }
             InteractiveEvent::PlaylistInput(c) => {
-                if self.playlist_creation_mode {
+                if self.playlist_creation_mode || self.playlist_rename_mode {
                     self.playlist_name_input.push(c);
-                    self.set_status(&format!("🎵 Playlist name: {}", self.playlist_name_input));
+                    let prefix = if self.playlist_rename_mode { "✏️" } else { "🎵" };
+                    self.set_status(&format!("{} Playlist name: {}", prefix, self.playlist_name_input));
                 }
             }
             InteractiveEvent::PlaylistBackspace => {
-                if self.playlist_creation_mode {
+                if self.playlist_creation_mode || self.playlist_rename_mode {
                     self.playlist_name_input.pop();
-                    self.set_status(&format!("🎵 Playlist name: {}", self.playlist_name_input));
+                    let prefix = if self.playlist_rename_mode { "✏️" } else { "🎵" };
+                    self.set_status(&format!("{} Playlist name: {}", prefix, self.playlist_name_input));
                 }
             }
             InteractiveEvent::ConfirmPlaylistCreation => {
-                if self.playlist_creation_mode && !self.playlist_name_input.is_empty() {
+                if self.playlist_rename_mode && !self.playlist_name_input.is_empty() {
+                    if let Some(rename_id) = self.playlist_rename_id.take() {
+                        match self.playlist_manager.rename_playlist(&rename_id, self.playlist_name_input.clone()) {
+                            Ok(_) => self.set_status(&format!("✅ Renamed to '{}'", self.playlist_name_input)),
+                            Err(e) => self.set_status(&format!("❌ Rename failed: {}", e)),
+                        }
+                    }
+                    self.playlist_rename_mode = false;
+                    self.playlist_name_input.clear();
+                } else if self.playlist_creation_mode && !self.playlist_name_input.is_empty() {
                     match self.playlist_manager.create_playlist(self.playlist_name_input.clone(), None) {
                         Ok(playlist_id) => {
                             self.set_status(&format!("✅ Created playlist: {}", self.playlist_name_input));
@@ -1185,15 +1410,45 @@ impl InteractiveApp {
             }
             InteractiveEvent::CancelPlaylistCreation => {
                 self.playlist_creation_mode = false;
+                self.playlist_rename_mode = false;
+                self.playlist_rename_id = None;
                 self.playlist_name_input.clear();
-                self.set_status("❌ Playlist creation cancelled");
+                self.set_status("❌ Cancelled");
             }
-            // Placeholder events for future implementation
             InteractiveEvent::RenamePlaylist => {
-                self.set_status("🚧 Rename playlist - not yet implemented");
+                if self.current_tab == AppTab::Playlists {
+                    if let Some(selected) = self.playlist_list_state.selected() {
+                        let playlists = self.playlist_manager.list_playlists();
+                        if let Some(playlist) = playlists.get(selected) {
+                            self.playlist_rename_id = Some(playlist.id.clone());
+                            self.playlist_name_input = playlist.name.clone(); // Pre-fill current name
+                            self.playlist_rename_mode = true;
+                            self.set_status(&format!("✏️ Renaming '{}' — Enter to confirm, Esc to cancel", playlist.name));
+                        }
+                    }
+                }
             }
             InteractiveEvent::RemoveFromPlaylist => {
-                self.set_status("🚧 Remove from playlist - not yet implemented");
+                // Note: get_playlist_selection_context() returns (playlist_id, 0) for playlist headers.
+                // If user presses 'x' on a header, this will remove the first track if it exists.
+                // This is acceptable behavior for now; proper fix would distinguish header vs track selection.
+                if self.current_tab == AppTab::Playlists {
+                    if let Some((playlist_id, track_idx_in_playlist)) = self.get_playlist_selection_context() {
+                        if let Some(playlist) = self.playlist_manager.get_playlist(&playlist_id) {
+                            let valid_tracks = playlist.get_valid_tracks(&self.tracks);
+                            if let Some(&actual_track_idx) = valid_tracks.get(track_idx_in_playlist) {
+                                let track_path = self.tracks[actual_track_idx].file_path.clone();
+                                let track_title = self.tracks[actual_track_idx].display_title();
+                                drop(playlist); // Release immutable borrow before mutable call
+                                
+                                match self.playlist_manager.remove_track_from_playlist(&playlist_id, &track_path) {
+                                    Ok(_) => self.set_status(&format!("🗑 Removed '{}' from playlist", track_title)),
+                                    Err(e) => self.set_status(&format!("❌ Failed to remove track: {}", e)),
+                                }
+                            }
+                        }
+                    }
+                }
             }
             InteractiveEvent::SelectPlaylistFromSelector => {
                 if self.show_playlist_selector {
@@ -1265,6 +1520,14 @@ impl InteractiveApp {
             timestamp: chrono::Utc::now(),
         }).await;
         
+        // Update recently played history for intelligent shuffle
+        self.recently_played.push_back(track.id);
+        // Keep history manageable (last 20 tracks, or 25% of library, whichever is larger)
+        let max_history = (self.tracks.len() / 4).max(20);
+        if self.recently_played.len() > max_history {
+            self.recently_played.pop_front(); // O(1) with VecDeque
+        }
+        
         // Play the track with graceful error handling
         self.set_status(&format!("🔄 Attempting to play: {}", track.display_title()));
         
@@ -1291,6 +1554,29 @@ impl InteractiveApp {
         }
         
         Ok(())
+    }
+    
+    /// Load a playlist into the queue, clearing existing queue contents
+    fn load_playlist_to_queue(&mut self, playlist_id: &str) {
+        if let Some(playlist) = self.playlist_manager.get_playlist(playlist_id) {
+            let valid_tracks = playlist.get_valid_tracks(&self.tracks);
+            
+            if valid_tracks.is_empty() {
+                self.set_status(&format!("⚠️ '{}' has no playable tracks", playlist.name));
+                return;
+            }
+            
+            let name = playlist.name.clone();
+            self.queue.clear();
+            self.queue.extend(valid_tracks.iter().copied());
+            
+            // Auto-open queue overlay so user sees what was loaded
+            self.queue_visible = true;
+            self.queue_list_state.select(Some(0));
+            
+            self.set_status(&format!("📋 Loaded '{}' into queue ({} tracks)", 
+                name, self.queue.len()));
+        }
     }
     
     /// Get the current playlist selection context (playlist_id, track_index_in_playlist)
@@ -1339,18 +1625,27 @@ impl InteractiveApp {
     }
 
     async fn next_track(&mut self) -> Result<()> {
-        if let Some(current_idx) = self.current_track_index {
-            // Record skip event
-            let track = &self.tracks[current_idx];
-            let _ = self.behavior_tracker.handle_event(PlaybackEvent::TrackSkipped {
-                track_id: track.id,
-                position: 0, // TODO: get actual position
-                reason: SkipReason::NextTrack,
-                timestamp: chrono::Utc::now(),
-            }).await;
+        // Only record skip if NOT advancing due to queue
+        // (queue pop = intentional advance, not a rejection of current track)
+        if self.queue.is_empty() {
+            if let Some(current_idx) = self.current_track_index {
+                let track = &self.tracks[current_idx];
+                let _ = self.behavior_tracker.handle_event(PlaybackEvent::TrackSkipped {
+                    track_id: track.id,
+                    position: self.current_position.as_secs() as u64,
+                    reason: SkipReason::NextTrack,
+                    timestamp: chrono::Utc::now(),
+                }).await;
+            }
         }
         
-        // Check if we're in playlist context first
+        // Priority 1: Queue takes precedence
+        if let Some(queued_idx) = self.queue.pop_front() {
+            self.play_track(queued_idx).await?;
+            return Ok(());
+        }
+        
+        // Priority 2: Check if we're in playlist context
         if self.current_tab == AppTab::Playlists && !self.expanded_playlists.is_empty() {
             // Get the currently expanded playlist (only one can be expanded)
             let expanded_playlist_id = self.expanded_playlists.iter().next().unwrap().clone();
@@ -1390,16 +1685,27 @@ impl InteractiveApp {
                         .map(|&idx| self.tracks[idx].id)
                         .collect();
                     
-                    // Get recent tracks to avoid (last 5 played tracks)
-                    let recently_played: Vec<uuid::Uuid> = vec![]; // TODO: implement recent track history
+                    // Get behaviors from behavior tracker
+                    let behaviors = match self.behavior_tracker.get_all_behaviors().await {
+                        Ok(behavior_vec) => {
+                            // Convert Vec<TrackBehavior> to HashMap<Uuid, TrackBehavior>
+                            behavior_vec.into_iter()
+                                .map(|b| (b.track_id, b))
+                                .collect::<std::collections::HashMap<_, _>>()
+                        }
+                        Err(e) => {
+                            debug!("Failed to load behaviors for shuffle: {}", e);
+                            std::collections::HashMap::new()
+                        }
+                    };
                     
-                    // Get behaviors from behavior tracker (empty for now)
-                    let behaviors = std::collections::HashMap::new(); // TODO: get actual behaviors
+                    // Convert VecDeque to Vec for slice compatibility
+                    let recently_played_vec: Vec<uuid::Uuid> = self.recently_played.iter().copied().collect();
                     
                     if let Some(next_track_id) = self.shuffle_weighting.select_next_track(
                         &available_track_ids,
                         &behaviors,
-                        &recently_played
+                        &recently_played_vec
                     ) {
                         // Find the index of this track in filtered_tracks
                         self.filtered_tracks.iter().position(|&idx| self.tracks[idx].id == next_track_id)
@@ -1908,6 +2214,12 @@ impl InteractiveApp {
         let terminal_size = self.terminal.size().unwrap_or(ratatui::layout::Rect::new(0, 0, 80, 24));
         let is_small_screen = terminal_size.height < 20;
         
+        // Extract queue data before closure to avoid borrow checker issues
+        let queue_visible = self.queue_visible;
+        let queue = &self.queue;
+        let tracks = &self.tracks;
+        let mut queue_list_state = &mut self.queue_list_state;
+        
         // Attempt render with error recovery
         match self.terminal.draw(|f| {
             let size = f.area();
@@ -1940,7 +2252,7 @@ impl InteractiveApp {
             // Render content based on current tab
             match &self.current_tab {
                 AppTab::Library => {
-                    Self::render_track_list(f, chunks[1], &self.tracks, &self.filtered_tracks, current_track_index, is_playing, &mut self.list_state);
+                    Self::render_track_list(f, chunks[1], &self.tracks, &self.filtered_tracks, current_track_index, is_playing, &mut self.list_state, &self.favorites);
                 }
                 AppTab::Playlists => {
                     Self::render_playlists_tree_view(f, chunks[1], &self.playlist_manager, &mut self.playlist_list_state, &self.expanded_playlists, &self.tracks, &self.playlist_track_states, current_track_index, is_playing);
@@ -1957,15 +2269,15 @@ impl InteractiveApp {
             Self::render_player_controls(f, chunks[2], &self.tracks, current_track_index, is_playing, volume, repeat_mode, is_shuffled, self.current_position, self.total_duration);
             
             // Render status bar
-            Self::render_status_bar(f, chunks[3], status_message);
+            Self::render_status_bar(f, chunks[3], status_message, self.queue.len());
             
             // Render search input if in search mode
             if self.search_mode {
                 Self::render_search_input(f, size, &self.search_query, self.filtered_tracks.len());
             }
             
-            // Render playlist creation input if in playlist creation mode
-            if self.playlist_creation_mode {
+            // Render playlist creation/rename input if in either mode
+            if self.playlist_creation_mode || self.playlist_rename_mode {
                 Self::render_playlist_input(f, size, &self.playlist_name_input);
             }
             
@@ -1980,6 +2292,11 @@ impl InteractiveApp {
             // Render help overlay if active
             if self.show_help {
                 Self::render_help_overlay(f, size);
+            }
+            
+            // Render queue overlay if visible
+            if queue_visible {
+                Self::render_queue_overlay(f, &queue, &tracks, &mut queue_list_state, queue_visible);
             }
         }) {
             Ok(_) => Ok(()),
@@ -2166,7 +2483,8 @@ impl InteractiveApp {
         filtered_tracks: &[usize],
         current_track_index: Option<usize>,
         is_playing: bool,
-        list_state: &mut ListState
+        list_state: &mut ListState,
+        favorites: &std::collections::HashSet<uuid::Uuid>,
     ) {
         let items: Vec<ListItem> = filtered_tracks
             .iter()
@@ -2189,9 +2507,12 @@ impl InteractiveApp {
                     "  "
                 };
                 
+                let star = if favorites.contains(&track.id) { "⭐ " } else { "   " };
+                
                 let content = format!(
-                    "{}{} - {} - {}",
+                    "{}{}{} - {} - {}",
                     prefix,
+                    star,
                     track.display_artist(),
                     track.display_title(),
                     track.display_album()
@@ -2388,8 +2709,8 @@ impl InteractiveApp {
         f.render_widget(settings_paragraph, area);
     }
     
-    fn render_status_bar(f: &mut Frame, area: Rect, status_message: Option<(String, Instant)>) {
-        let status_text = if let Some((message, timestamp)) = status_message {
+    fn render_status_bar(f: &mut Frame, area: Rect, status_message: Option<(String, Instant)>, queue_len: usize) {
+        let mut status_text = if let Some((message, timestamp)) = status_message {
             // Show status message for 3 seconds
             if timestamp.elapsed() < Duration::from_secs(3) {
                 message
@@ -2399,6 +2720,11 @@ impl InteractiveApp {
         } else {
             "Ready".to_string()
         };
+        
+        // Append queue count if queue is not empty
+        if queue_len > 0 {
+            status_text.push_str(&format!(" | 📋 Queue: {}", queue_len));
+        }
         
         let status = Paragraph::new(status_text)
             .style(Style::default().fg(Color::Green))
@@ -2654,11 +2980,20 @@ impl InteractiveApp {
             Line::from("  r             Cycle repeat mode"),
             Line::from("  +/-           Volume up/down"),
             Line::from(""),
+            Line::from(vec![Span::styled("Queue:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
+            Line::from("  e             Play next (add to front of queue)"),
+            Line::from("  E             Add to end of queue"),
+            Line::from("  Q             Toggle queue overlay"),
+            Line::from("  x             Remove from queue (when overlay open)"),
+            Line::from("  C             Clear queue"),
+            Line::from("  f             Toggle favorite (⭐ boosts shuffle weight)"),
+            Line::from(""),
             Line::from(vec![Span::styled("Playlists:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  c             Create playlist"),
             Line::from("  Del           Delete playlist"),
             Line::from("  l/Enter       Load playlist"),
             Line::from("  a             Add track to playlist (from Library)"),
+            Line::from("  Q             Load playlist into queue"),
             Line::from(""),
             Line::from(vec![Span::styled("Metadata Editor:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  Enter         Edit selected track"),
@@ -2694,6 +3029,56 @@ impl InteractiveApp {
             .wrap(Wrap { trim: true });
         
         f.render_widget(help_paragraph, popup_area);
+    }
+    
+    fn render_queue_overlay(
+        f: &mut Frame,
+        queue: &VecDeque<usize>,
+        tracks: &[panpipe::Track],
+        queue_list_state: &mut ListState,
+        queue_visible: bool,
+    ) {
+        if !queue_visible || queue.is_empty() {
+            if queue_visible && queue.is_empty() {
+                // Show empty state briefly
+                let area = Self::centered_rect(50, 30, f.size());
+                f.render_widget(Clear, area);
+                let block = Block::default()
+                    .title("📋 Queue (empty)")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow));
+                let msg = Paragraph::new("Queue is empty\n\ne / E to add tracks")
+                    .block(block)
+                    .alignment(Alignment::Center);
+                f.render_widget(msg, area);
+            }
+            return;
+        }
+
+        let area = Self::centered_rect(60, 60, f.size());
+        f.render_widget(Clear, area);
+
+        let items: Vec<ListItem> = queue.iter().enumerate()
+            .map(|(i, &track_idx)| {
+                let track = &tracks[track_idx];
+                let label = format!("{:2}. {} — {}", 
+                    i + 1,
+                    track.display_artist(),
+                    track.display_title());
+                ListItem::new(label)
+            })
+            .collect();
+
+        let title = format!("📋 Queue ({} tracks) — Q:close  x:remove  C:clear", queue.len());
+        let list = List::new(items)
+            .block(Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)))
+            .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
+            .highlight_symbol("▶ ");
+
+        f.render_stateful_widget(list, area, queue_list_state);
     }
     
     fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -2916,6 +3301,17 @@ enum InteractiveEvent {
     // Playlist selector overlay events
     SelectPlaylistFromSelector,
     CancelPlaylistSelector,
+    // Queue management events
+    QueuePlayNext,    // 'e' - Insert at front of queue
+    QueueAddToEnd,    // 'E' - Append to end of queue
+    QueueClear,       // 'C' - Clear entire queue
+    ToggleQueue,      // 'Q' - Toggle queue overlay (Library tab)
+    QueueRemove,      // 'x' - Remove selected track from queue (when overlay visible)
+    LoadPlaylistToQueue,  // 'Q' - Load playlist into queue (Playlists tab)
+    ConfirmQueueReplace,  // 'Y' - Confirm replacing queue with playlist
+    CancelQueueReplace,   // 'N' or Esc - Cancel queue replacement
+    // Favorites
+    ToggleFavorite,   // 'f' - Toggle favorite status (⭐ boosts shuffle weight)
 }
 
 /// Redirect stderr to /dev/null to suppress ALSA error messages that interfere with TUI

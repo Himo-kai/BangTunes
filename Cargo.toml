@@ -76,7 +76,7 @@ symphonia = { version = "0.5", default-features = false, optional = true, featur
 # Behavior storage (gated by `behavior`)
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 chrono = { version = "0.4", features = ["serde"], optional = true }
-uuid = { version = "1.10", features = ["v4", "serde"], optional = true }
+uuid = { version = "1.10", features = ["v4", "v5", "serde"], optional = true }
 
 # Config + serde
 toml = "0.8"
