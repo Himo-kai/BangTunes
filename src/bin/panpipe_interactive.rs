@@ -2198,11 +2198,8 @@ impl InteractiveApp {
             self.current_position += elapsed;
             self.last_position_update = now;
             
-            // Check if track finished using audio player state
-            if self.audio_player.is_finished() {
-                debug!("🎵 Track finished detected by audio player");
-                self.next_track().await?;
-            }
+            // Track finish detection handled by PlayerEvent::TrackStopped with premature stop protection
+            // Polling is_finished() causes false positives during rodio buffering
         }
         
         // Update visualizer data

@@ -153,8 +153,50 @@ impl AudioPlayer {
             *learning_track_guard = Some(track.clone());
         }
         
-        // NOTE: Removed problematic completion monitor that was interfering with playback
-        // Duration learning will be handled by the existing UI-based completion detection
+        // Spawn background task to monitor track completion with anti-spurious protection
+        if let Some(sender) = &self.event_sender {
+            let sink_clone = Arc::clone(&self.sink);
+            let state_clone = Arc::clone(&self.state);
+            let sender_clone = sender.clone();
+            let track_clone = track.clone();
+            
+            tokio::spawn(async move {
+                // Give the track time to start buffering (prevents spurious empty() at startup)
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    
+                    // Check if sink is empty (track might be finished)
+                    let is_empty = sink_clone.lock().unwrap()
+                        .as_ref()
+                        .map(|s| s.empty())
+                        .unwrap_or(true);
+                    
+                    if is_empty {
+                        // Wait 1 second to confirm this isn't a spurious empty() during buffering
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        
+                        // Check again
+                        let still_empty = sink_clone.lock().unwrap()
+                            .as_ref()
+                            .map(|s| s.empty())
+                            .unwrap_or(true);
+                        
+                        if still_empty {
+                            // Confirmed: track actually finished
+                            let _ = sender_clone.send(PlayerEvent::TrackStopped);
+                            break;
+                        }
+                    }
+                    
+                    // Stop monitoring if playback was stopped manually
+                    if *state_clone.lock().unwrap() == PlaybackState::Stopped {
+                        break;
+                    }
+                }
+            });
+        }
         
         // Send success event
         if let Some(sender) = &self.event_sender {
