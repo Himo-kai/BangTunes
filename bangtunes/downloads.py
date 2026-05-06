@@ -20,7 +20,9 @@ try:
         SpinnerColumn,
         TextColumn,
         BarColumn,
+        TimeElapsedColumn,
         TimeRemainingColumn,
+        MofNCompleteColumn,
     )
 
     console: Optional[Console] = Console()
@@ -296,15 +298,16 @@ def download_batch(
             graceful_sigint_func() as flag,
             Progress(
                 SpinnerColumn(),
-                TextColumn("[bold blue]{task.description}"),
+                TextColumn("[bold blue]{task.description}", no_wrap=True, min_width=40),
                 BarColumn(),
-                TextColumn("{task.completed}/{task.total}"),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
                 TimeRemainingColumn(),
                 console=console,
             ) as progress,
         ):
             task = progress.add_task(f"Downloading {tag}", total=len(items))
-            _download_batch_items(
+            failures = _download_batch_items(
                 items,
                 flag,
                 task,
@@ -325,7 +328,7 @@ def download_batch(
     else:
         # Fallback without progress bar
         flag = {"hit": False}
-        _download_batch_items(
+        failures = _download_batch_items(
             items,
             flag,
             None,
@@ -406,6 +409,12 @@ def _download_batch_items(
             if progress:
                 progress.advance(task)
             continue
+
+        # Update description to show current track
+        if progress:
+            title = row.get("title", "Unknown")[:35]
+            artist = row.get("artist", "Unknown")[:20]
+            progress.update(task, description=f"⬇ {artist} — {title}")
 
         tmp = with_retries(
             run_ytdlp_audio,

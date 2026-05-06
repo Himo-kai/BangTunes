@@ -185,7 +185,7 @@ def search_related(ytm: Any, title: str, artist: str) -> List[Dict[str, str]]:
     # try the obvious approach first
     query = f"{title} {artist}"
     try:
-        results = ytm.search(query, filter="songs", limit=20)
+        results = ytm.search(query, filter="songs", limit=50)
         for item in results:
             if item.get("category") != "Songs":
                 continue
