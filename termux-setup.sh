@@ -62,12 +62,18 @@ echo "$(sym_ok) System packages installed"
 echo
 echo "🐍 Setting up Python environment..."
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
+# Create virtual environment if it doesn't exist or is broken
+if [ ! -d "venv" ] || ! ./venv/bin/pip --version >/dev/null 2>&1; then
+    if [ -d "venv" ]; then
+        echo "   Detected broken virtual environment, recreating..."
+        rm -rf venv
+    else
+        echo "   Creating Python virtual environment..."
+    fi
     python -m venv venv
     echo "$(sym_ok) Virtual environment created"
 else
-    echo "$(sym_ok) Virtual environment already exists"
+    echo "$(sym_ok) Virtual environment healthy"
 fi
 
 # Activate virtual environment
