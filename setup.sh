@@ -95,9 +95,14 @@ if [[ "$VERSION_CHECK" != "OK" ]]; then
     exit 1
 fi
 
-# Set up a virtual environment to keep things clean
-if [ ! -d "venv" ]; then
-    echo "Creating Python virtual environment..."
+# Create virtual environment if it doesn't exist or is broken
+if [ ! -d "venv" ] || ! ./venv/bin/pip --version &>/dev/null; then
+    if [ -d "venv" ]; then
+        echo "Detected broken virtual environment, recreating..."
+        rm -rf venv
+    else
+        echo "Creating Python virtual environment..."
+    fi
     $PYTHON_CMD -m venv venv
     if [ $? -ne 0 ]; then
         echo "ERROR: Failed to create virtual environment"
@@ -106,7 +111,7 @@ if [ ! -d "venv" ]; then
         exit 1
     fi
 else
-    echo "Virtual environment already exists"
+    echo "Virtual environment already exists and is healthy"
 fi
 
 # Activate virtual environment and install dependencies
