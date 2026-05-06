@@ -95,6 +95,8 @@ impl Track {
     }
 
     /// Update duration based on actual playback time (duration learning)
+    /// TODO: Persist learned durations to database - currently in-memory only, resets on restart
+    /// This affects shuffle quality since weighting calculator uses duration for completion rate
     pub fn learn_duration(&mut self, actual_duration: Duration) {
         // Only update if we don't have duration data or if the learned duration is significantly different
         match self.duration {
