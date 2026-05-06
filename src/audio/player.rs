@@ -1,6 +1,12 @@
+// ============================================================================
+// Full AudioPlayer implementation with rodio (Linux/macOS/Windows)
+// ============================================================================
+
+#[cfg(feature = "audio")]
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+
 use super::{AudioConfig, Track};
 use anyhow::Result;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::{Arc, Mutex};
@@ -8,6 +14,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
+#[cfg(feature = "audio")]
 #[derive(Error, Debug)]
 pub enum PlayerError {
     #[error("Mutex lock poisoned: {0}")]
@@ -20,6 +27,7 @@ pub enum PlayerError {
     Decoder(#[from] rodio::decoder::DecoderError),
 }
 
+#[cfg(feature = "audio")]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaybackState {
     Stopped,
@@ -27,6 +35,7 @@ pub enum PlaybackState {
     Paused,
 }
 
+#[cfg(feature = "audio")]
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
     TrackStarted(Track),
@@ -40,6 +49,7 @@ pub enum PlayerEvent {
     Error(String),
 }
 
+#[cfg(feature = "audio")]
 pub struct AudioPlayer {
     _stream: OutputStream,
     stream_handle: OutputStreamHandle,
@@ -53,6 +63,7 @@ pub struct AudioPlayer {
     track_for_learning: Arc<Mutex<Option<Track>>>, // Track to learn duration for
 }
 
+#[cfg(feature = "audio")]
 impl AudioPlayer {
     pub fn new(config: AudioConfig) -> Result<Self> {
         let (stream, stream_handle) = OutputStream::try_default()?;
@@ -331,3 +342,60 @@ impl AudioPlayer {
     }
 
 }
+
+// ============================================================================
+// Stub AudioPlayer for Termux/Android (no rodio/ALSA support)
+// ============================================================================
+
+#[cfg(not(feature = "audio"))]
+pub mod stub {
+    use super::Track;
+    use anyhow::Result;
+    use tokio::sync::mpsc;
+    
+    pub struct AudioPlayer;
+    
+    #[derive(Debug, Clone)]
+    pub enum PlayerEvent {
+        TrackStarted(Track),
+        TrackPaused,
+        TrackResumed,
+        TrackStopped,
+        TrackFinished(Track),
+        DurationLearned(Track, std::time::Duration),
+        PositionChanged(std::time::Duration),
+        VolumeChanged(f32),
+        Error(String),
+    }
+    
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum PlaybackState {
+        Stopped,
+        Playing,
+        Paused,
+    }
+    
+    impl AudioPlayer {
+        pub fn new(_config: super::AudioConfig) -> Result<Self> {
+            Ok(AudioPlayer)
+        }
+        
+        pub fn play_track(&self, _track: Track) -> Result<()> {
+            // Stub - actual message shown in TUI
+            Ok(())
+        }
+        
+        pub fn pause(&self) -> Result<()> { Ok(()) }
+        pub fn resume(&self) -> Result<()> { Ok(()) }
+        pub fn stop(&self) -> Result<()> { Ok(()) }
+        pub fn set_volume(&mut self, _volume: f32) -> Result<()> { Ok(()) }
+        pub fn get_volume(&self) -> f32 { 0.7 }
+        pub fn is_finished(&self) -> bool { true }
+        pub fn get_current_track(&self) -> Option<Track> { None }
+        pub fn get_state(&self) -> PlaybackState { PlaybackState::Stopped }
+        pub fn set_event_sender(&mut self, _tx: mpsc::UnboundedSender<PlayerEvent>) {}
+    }
+}
+
+#[cfg(not(feature = "audio"))]
+pub use stub::*;

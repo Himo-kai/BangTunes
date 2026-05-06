@@ -32,6 +32,7 @@ default = ["tui", "audio", "behavior"]
 tui = ["dep:ratatui", "dep:crossterm"]
 audio = ["dep:rodio"]
 behavior = ["dep:rusqlite", "dep:chrono", "dep:uuid"]
+termux = ["tui", "behavior"]  # Headless mode for Android (no rodio/ALSA)
 
 # optional, only when you actually wire them
 probe = ["dep:symphonia"]          # duration/metadata probing beyond basic tags

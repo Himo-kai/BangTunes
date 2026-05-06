@@ -1529,28 +1529,41 @@ impl InteractiveApp {
         }
         
         // Play the track with graceful error handling
-        self.set_status(&format!("🔄 Attempting to play: {}", track.display_title()));
+        #[cfg(feature = "audio")]
+        {
+            self.set_status(&format!("🔄 Attempting to play: {}", track.display_title()));
+            
+            match self.audio_player.play_track(track.clone()) {
+                Ok(()) => {
+                    self.current_track_index = Some(track_idx);
+                    self.is_playing = true;
         
-        match self.audio_player.play_track(track.clone()) {
-            Ok(()) => {
-                self.current_track_index = Some(track_idx);
-                self.is_playing = true;
-    
-                
-                // Reset time tracking
-                self.current_position = Duration::from_secs(0);
-                self.total_duration = track.duration;
-                self.last_position_update = Instant::now();
-                
-                self.set_status(&format!("✅ SUCCESS: Playing {} | idx={} | is_playing={}", 
-                    track.display_title(), track_idx, self.is_playing));
+                    
+                    // Reset time tracking
+                    self.current_position = Duration::from_secs(0);
+                    self.total_duration = track.duration;
+                    self.last_position_update = Instant::now();
+                    
+                    self.set_status(&format!("✅ SUCCESS: Playing {} | idx={} | is_playing={}", 
+                        track.display_title(), track_idx, self.is_playing));
+                }
+                Err(e) => {
+                    // Don't crash the TUI - just show error and continue
+                    self.set_status(&format!("❌ AUDIO PLAYER FAILED: {} | Error: {}", track.display_title(), e));
+                    self.is_playing = false;
+                    self.current_track_index = None;
+                }
             }
-            Err(e) => {
-                // Don't crash the TUI - just show error and continue
-                self.set_status(&format!("❌ AUDIO PLAYER FAILED: {} | Error: {}", track.display_title(), e));
-                self.is_playing = false;
-                self.current_track_index = None;
-            }
+        }
+        
+        #[cfg(not(feature = "audio"))]
+        {
+            // Headless mode - direct user to quickplay for audio
+            self.set_status(&format!(
+                "▶ {} — Audio playback unavailable. Run: python bang_tunes.py quickplay", 
+                track.display_title()
+            ));
+            self.current_track_index = Some(track_idx);
         }
         
         Ok(())

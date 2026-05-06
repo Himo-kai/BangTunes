@@ -90,23 +90,28 @@ echo "$(sym_ok) Directory structure created"
 
 # Step 4: Build Rust components using specialized Termux setup
 echo
-echo "🦀 Building Rust components..."
+echo "🦀 Building Rust components (headless mode - no audio backend)..."
 if command -v cargo >/dev/null 2>&1; then
-    echo "   Using Termux-optimized build process..."
+    echo "   Using Termux-optimized build (TUI only, audio via quickplay)..."
     # Clear inherited desktop env safely (unset, don't blank)
     unset RUSTFLAGS
     unset CARGO_BUILD_TARGET
     unset CARGO_TARGET_DIR
-    if python bang_tunes.py setup-player; then
-        echo "$(sym_ok) Rust player built successfully"
+    
+    # Build with termux feature (no rodio/ALSA dependency)
+    if cargo build --release --bin panpipe_interactive \
+        --no-default-features --features termux 2>&1 | tail -5; then
+        echo "$(sym_ok) Rust TUI player built successfully (headless mode)"
+        echo "   Library management, playlists, metadata editing available"
+        echo "   Audio playback: use 'python bang_tunes.py quickplay'"
         RUST_AVAILABLE=true
     else
-        echo "⚠️  Rust build failed - advanced player unavailable"
-        echo "   Basic playback will still work with mpv/termux-media-player"
+        echo "⚠️  Rust build failed - TUI player unavailable"
+        echo "   All features still work via CLI commands"
         RUST_AVAILABLE=false
     fi
 else
-    echo "⚠️  Rust not available - advanced player unavailable"
+    echo "⚠️  Rust not available - TUI player unavailable"
     echo "   Basic playback will still work with mpv/termux-media-player"
     RUST_AVAILABLE=false
 fi
