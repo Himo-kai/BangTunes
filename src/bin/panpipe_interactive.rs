@@ -1684,33 +1684,78 @@ impl InteractiveApp {
                 
                 // Get current track state for this playlist
                 if let Some(track_state) = self.playlist_track_states.get_mut(&expanded_playlist_id) {
-                    let current_track_idx = track_state.selected().unwrap_or(0);
-                    let next_track_idx = current_track_idx + 1;
-                    
-                    // Check if playlist ended
-                    if next_track_idx >= valid_tracks.len() {
-                        if self.repeat_mode == RepeatMode::All {
-                            // Wrap to beginning
-                            track_state.select(Some(0));
-                            if let Some(&actual_track_idx) = valid_tracks.first() {
-                                debug!("🎵 Playlist ended, repeating from start (RepeatAll)");
-                                self.play_track(actual_track_idx).await?;
+                    let next_track_idx = if self.is_shuffled {
+                        // Use intelligent shuffle weighting for playlist
+                        debug!("🎵 Using intelligent shuffle weighting for playlist");
+                        
+                        // Get track IDs for playlist tracks
+                        let available_track_ids: Vec<uuid::Uuid> = valid_tracks.iter()
+                            .map(|&idx| self.tracks[idx].id)
+                            .collect();
+                        
+                        // Get behaviors from behavior tracker
+                        let behaviors = match self.behavior_tracker.get_all_behaviors().await {
+                            Ok(behavior_vec) => {
+                                behavior_vec.into_iter()
+                                    .map(|b| (b.track_id, b))
+                                    .collect::<std::collections::HashMap<_, _>>()
                             }
+                            Err(e) => {
+                                debug!("Failed to load behaviors for shuffle: {}", e);
+                                std::collections::HashMap::new()
+                            }
+                        };
+                        
+                        // Convert VecDeque to Vec for slice compatibility
+                        let recently_played_vec: Vec<uuid::Uuid> = self.recently_played.iter().copied().collect();
+                        
+                        if let Some(next_track_id) = self.shuffle_weighting.select_next_track(
+                            &available_track_ids,
+                            &behaviors,
+                            &recently_played_vec
+                        ) {
+                            // Find the index of this track in valid_tracks
+                            valid_tracks.iter().position(|&idx| self.tracks[idx].id == next_track_id)
+                                .unwrap_or(0)
                         } else {
-                            // Stop playback - playlist finished
-                            self.is_playing = false;
-                            self.set_status("⏹️ Playlist finished");
-                            debug!("🎵 Playlist finished (RepeatMode::{:?})", self.repeat_mode);
+                            // Fallback to simple shuffle if weighting fails
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+                            rng.gen_range(0..valid_tracks.len())
                         }
                     } else {
-                        // Normal next track
-                        track_state.select(Some(next_track_idx));
-                        if let Some(&actual_track_idx) = valid_tracks.get(next_track_idx) {
-                            debug!("🎵 Playing next track {} from playlist (track {} of {})", actual_track_idx, next_track_idx + 1, valid_tracks.len());
-                            self.play_track(actual_track_idx).await?;
-                        } else {
-                            debug!("❌ Next track index {} not found in playlist", next_track_idx);
+                        // Sequential playback
+                        let current_track_idx = track_state.selected().unwrap_or(0);
+                        let next = current_track_idx + 1;
+                        
+                        // Check if playlist ended
+                        if next >= valid_tracks.len() {
+                            if self.repeat_mode == RepeatMode::All {
+                                // Wrap to beginning
+                                track_state.select(Some(0));
+                                if let Some(&actual_track_idx) = valid_tracks.first() {
+                                    debug!("🎵 Playlist ended, repeating from start (RepeatAll)");
+                                    self.play_track(actual_track_idx).await?;
+                                    return Ok(());
+                                }
+                            } else {
+                                // Stop playback - playlist finished
+                                self.is_playing = false;
+                                self.set_status("⏹️ Playlist finished");
+                                debug!("🎵 Playlist finished (RepeatMode::{:?})", self.repeat_mode);
+                                return Ok(());
+                            }
                         }
+                        next
+                    };
+                    
+                    // Play the selected track
+                    track_state.select(Some(next_track_idx));
+                    if let Some(&actual_track_idx) = valid_tracks.get(next_track_idx) {
+                        debug!("🎵 Playing track {} from playlist (shuffled: {})", actual_track_idx, self.is_shuffled);
+                        self.play_track(actual_track_idx).await?;
+                    } else {
+                        debug!("❌ Next track index {} not found in playlist", next_track_idx);
                     }
                 } else {
                     debug!("❌ No track state found for expanded playlist");

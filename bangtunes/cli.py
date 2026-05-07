@@ -118,8 +118,8 @@ Examples:
         "quickplay", help="Instant music playback (ffplay/termux) - no setup required"
     )
     sub.add_parser(
-        "edit-metadata",
-        help="Interactive metadata editor - search, view, and edit track information",
+        "list-metadata-issues",
+        help="List tracks with missing or 'Unknown' metadata",
     )
 
     r = sub.add_parser("rescan", help="Compare DB with disk and report mismatches")
@@ -191,8 +191,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return commands.cmd_stats(args, root, config)
         elif args.cmd == "quickplay":
             return commands.cmd_quickplay(args, root, config)
-        elif args.cmd == "edit-metadata":
-            return commands.cmd_edit_metadata(args, root, config)
+        elif args.cmd == "list-metadata-issues":
+            return commands.cmd_list_metadata_issues(args, root, config)
         elif args.cmd == "rescan":
             return commands.cmd_rescan(args, root, config)
         elif args.cmd in {"play", "setup-player", "sync", "player-status"}:

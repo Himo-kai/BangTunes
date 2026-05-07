@@ -812,8 +812,8 @@ def cmd_quickplay(args: Any, root: Path, config: Dict[str, Any]) -> int:
     return run_python_player(root, config)
 
 
-def cmd_edit_metadata(args: Any, root: Path, config: Dict[str, Any]) -> int:
-    """Handle edit-metadata command - interactive metadata editor."""
+def cmd_list_metadata_issues(args: Any, root: Path, config: Dict[str, Any]) -> int:
+    """Handle list-metadata-issues command - report tracks with missing metadata."""
     try:
         if console:
             console.print("[bold]✏️  BangTunes Metadata Editor[/bold]")
