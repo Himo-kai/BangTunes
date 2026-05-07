@@ -1454,7 +1454,7 @@ impl InteractiveApp {
                             if let Some(&actual_track_idx) = valid_tracks.get(track_idx_in_playlist) {
                                 let track_path = self.tracks[actual_track_idx].file_path.clone();
                                 let track_title = self.tracks[actual_track_idx].display_title();
-                                drop(playlist); // Release immutable borrow before mutable call
+                                let _ = playlist; // Release immutable borrow before mutable call
                                 
                                 match self.playlist_manager.remove_track_from_playlist(&playlist_id, &track_path) {
                                     Ok(_) => self.set_status(&format!("🗑 Removed '{}' from playlist", track_title)),
@@ -3149,7 +3149,7 @@ impl InteractiveApp {
         if !queue_visible || queue.is_empty() {
             if queue_visible && queue.is_empty() {
                 // Show empty state briefly
-                let area = Self::centered_rect(50, 30, f.size());
+                let area = Self::centered_rect(50, 30, f.area());
                 f.render_widget(Clear, area);
                 let block = Block::default()
                     .title("📋 Queue (empty)")
@@ -3163,7 +3163,7 @@ impl InteractiveApp {
             return;
         }
 
-        let area = Self::centered_rect(60, 60, f.size());
+        let area = Self::centered_rect(60, 60, f.area());
         f.render_widget(Clear, area);
 
         let items: Vec<ListItem> = queue.iter().enumerate()
