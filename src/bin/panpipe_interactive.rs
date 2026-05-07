@@ -298,7 +298,6 @@ struct InteractiveApp {
     playlist_manager: PlaylistManager,
     playlist_list_state: ListState,
     current_playlist_id: Option<String>,
-    playlist_tracks: Vec<usize>, // indices into tracks for current playlist
     playlist_creation_mode: bool,
     playlist_rename_mode: bool,
     playlist_rename_id: Option<String>,
@@ -431,7 +430,6 @@ impl InteractiveApp {
             playlist_manager: PlaylistManager::new("playlists".into()).map_err(|e| anyhow::anyhow!("{}", e))?,
             playlist_list_state: ListState::default(),
             current_playlist_id: None,
-            playlist_tracks: Vec::new(),
             playlist_creation_mode: false,
             playlist_rename_mode: false,
             playlist_rename_id: None,
@@ -602,6 +600,7 @@ impl InteractiveApp {
         match (key.code, key.modifiers) {
             // Ctrl combinations for ergonomic shortcuts
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => Some(InteractiveEvent::SaveMetadata),
+            (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(InteractiveEvent::ResetToOriginal),
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(InteractiveEvent::Quit), // Ctrl+C
             
             // Regular key mappings
@@ -631,6 +630,12 @@ impl InteractiveApp {
                 match self.current_tab {
                     AppTab::Playlists => Some(InteractiveEvent::LoadPlaylistToQueue),
                     _ => Some(InteractiveEvent::ToggleQueue),
+                }
+            }
+            (KeyCode::Char('N'), KeyModifiers::SHIFT) => {
+                match self.current_tab {
+                    AppTab::Playlists => Some(InteractiveEvent::StartPlaylistCreation),
+                    _ => None,
                 }
             }
             // Favorites
@@ -663,8 +668,13 @@ impl InteractiveApp {
             (KeyCode::Char('r'), KeyModifiers::NONE) => {
                 match self.current_tab {
                     AppTab::Playlists => Some(InteractiveEvent::RenamePlaylist),
-                    _ => Some(InteractiveEvent::ToggleRepeat), // Default behavior for other tabs
+                    AppTab::Library => Some(InteractiveEvent::ToggleRepeat),
+                    _ => None, // Other tabs don't use 'r'
                 }
+            }
+            (KeyCode::Char('R'), KeyModifiers::SHIFT) => {
+                // Shift+R is ToggleRepeat on all tabs (doesn't conflict with rename)
+                Some(InteractiveEvent::ToggleRepeat)
             }
             (KeyCode::Char('x'), KeyModifiers::NONE) => {
                 if self.queue_visible {
@@ -752,6 +762,7 @@ impl InteractiveApp {
             (InteractiveEvent::SearchBackspace, _, _) => true,
             
             // Playlist creation input events - should work when in playlist creation mode
+            (InteractiveEvent::StartPlaylistCreation, AppTab::Playlists, EditMode::None) => true,
             (InteractiveEvent::PlaylistInput(_), _, _) => true,
             (InteractiveEvent::PlaylistBackspace, _, _) => true,
             (InteractiveEvent::ConfirmPlaylistCreation, _, _) => true,
@@ -1291,12 +1302,9 @@ impl InteractiveApp {
                             let playlist_name = playlist.name.clone();
                             let valid_tracks = playlist.get_valid_tracks(&self.tracks);
                             
-                            // Load playlist tracks
-                            self.playlist_tracks = valid_tracks;
+                            // Load playlist - use valid_tracks directly
                             self.current_playlist_id = Some(playlist_id);
-                            
-                            // Update filtered tracks to show playlist content
-                            self.filtered_tracks = self.playlist_tracks.clone();
+                            self.filtered_tracks = valid_tracks;
                             if !self.filtered_tracks.is_empty() {
                                 self.list_state.select(Some(0));
                             }
@@ -1414,6 +1422,13 @@ impl InteractiveApp {
                 self.playlist_rename_id = None;
                 self.playlist_name_input.clear();
                 self.set_status("❌ Cancelled");
+            }
+            InteractiveEvent::StartPlaylistCreation => {
+                if self.current_tab == AppTab::Playlists {
+                    self.playlist_creation_mode = true;
+                    self.playlist_name_input.clear();
+                    self.set_status("📝 New Playlist — Enter name, then Enter to confirm, Esc to cancel");
+                }
             }
             InteractiveEvent::RenamePlaylist => {
                 if self.current_tab == AppTab::Playlists {
@@ -1747,7 +1762,23 @@ impl InteractiveApp {
                     }
                 } else {
                     // Sequential playback
-                    (selected + 1) % self.filtered_tracks.len()
+                    let next = selected + 1;
+                    
+                    // Check if we've reached the end of the library
+                    if next >= self.filtered_tracks.len() {
+                        if self.repeat_mode == RepeatMode::Off {
+                            // Stop playback - library finished
+                            self.is_playing = false;
+                            self.set_status("⏹️ End of library");
+                            debug!("🎵 Library finished (RepeatMode::Off)");
+                            return Ok(());
+                        } else {
+                            // RepeatAll or RepeatOne - wrap to beginning
+                            0
+                        }
+                    } else {
+                        next
+                    }
                 };
                 
                 self.list_state.select(Some(next_idx));
@@ -2081,8 +2112,8 @@ impl InteractiveApp {
     
     async fn apply_filename_suggestion(&mut self, track_idx: usize) -> Result<()> {
         if track_idx < self.tracks.len() {
-            let track = &self.tracks[track_idx];
-            let filename = track.file_path.file_name()
+            let file_path = self.tracks[track_idx].file_path.clone();
+            let filename = file_path.file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("unknown");
             
@@ -2091,6 +2122,18 @@ impl InteractiveApp {
             // Update the track metadata with suggestions
             self.tracks[track_idx].metadata.title = Some(parsed.suggested_title.clone());
             self.tracks[track_idx].metadata.artist = Some(parsed.suggested_artist.clone());
+            
+            // Save to BangTunes database if available
+            if let Some(ref database) = self.database {
+                if let Ok(Some(db_track)) = database.find_track_by_path(&file_path) {
+                    let track = &self.tracks[track_idx];
+                    let title = track.metadata.title.as_deref().unwrap_or("Unknown Title");
+                    let artist = track.metadata.artist.as_deref().unwrap_or("Unknown Artist");
+                    let album = track.metadata.album.as_deref().unwrap_or("Unknown Album");
+                    
+                    let _ = database.update_track_metadata(db_track.id, title, artist, album);
+                }
+            }
             
             self.set_status(&format!(
                 "🤖 Applied suggestion: {} - {} (confidence: {:.0}%)", 
@@ -2122,8 +2165,8 @@ impl InteractiveApp {
         let total_tracks = self.tracks.len();
         
         for i in 0..total_tracks {
-            let track = &self.tracks[i];
-            let filename = track.file_path.file_name()
+            let file_path = self.tracks[i].file_path.clone();
+            let filename = file_path.file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("unknown");
             
@@ -2131,8 +2174,21 @@ impl InteractiveApp {
             
             // Only apply if confidence is reasonable (>50%)
             if parsed.confidence > 0.5 {
-                self.tracks[i].metadata.title = Some(parsed.suggested_title);
-                self.tracks[i].metadata.artist = Some(parsed.suggested_artist);
+                self.tracks[i].metadata.title = Some(parsed.suggested_title.clone());
+                self.tracks[i].metadata.artist = Some(parsed.suggested_artist.clone());
+                
+                // Save to BangTunes database if available
+                if let Some(ref database) = self.database {
+                    if let Ok(Some(db_track)) = database.find_track_by_path(&file_path) {
+                        let track = &self.tracks[i];
+                        let title = track.metadata.title.as_deref().unwrap_or("Unknown Title");
+                        let artist = track.metadata.artist.as_deref().unwrap_or("Unknown Artist");
+                        let album = track.metadata.album.as_deref().unwrap_or("Unknown Album");
+                        
+                        let _ = database.update_track_metadata(db_track.id, title, artist, album);
+                    }
+                }
+                
                 applied_count += 1;
             }
         }
@@ -2678,7 +2734,8 @@ impl InteractiveApp {
             Line::from(vec![Span::styled("📋 Playlist Features:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  Enter         Expand/collapse playlist"),
             Line::from("  Shift+N       Create new playlist"),
-            Line::from("  Shift+R       Rename playlist"),
+            Line::from("  r             Rename playlist (Playlists tab)"),
+            Line::from("  Shift+R       Toggle repeat mode (all tabs)"),
             Line::from("  Shift+Q       Load playlist to queue"),
             Line::from("  x             Remove track from playlist"),
             Line::from("  Del           Delete playlist"),
@@ -3116,23 +3173,33 @@ impl InteractiveApp {
                 self.set_status(&format!("▶️ Playing: {}", self.format_track_title(&track)));
             }
             PlayerEvent::TrackFinished(_track) => {
-                // Check repeat mode first - RepeatOne takes priority
-                match self.repeat_mode {
-                    RepeatMode::One => {
-                        // Replay current track
-                        if let Some(idx) = self.current_track_index {
-                            debug!("RepeatOne: Replaying track at index {}", idx);
-                            self.play_track(idx).await?;
-                        }
+                // Queue takes priority over repeat mode - prevents stuck queue
+                if !self.queue.is_empty() {
+                    debug!("TrackFinished - queue has items, advancing to queued track");
+                    if self.autoplay {
+                        self.next_track().await?;
+                    } else {
+                        self.is_playing = false;
                     }
-                    RepeatMode::All | RepeatMode::Off => {
-                        // Normal autoplay behavior
-                        if self.autoplay {
-                            debug!("TrackFinished - auto-advancing (RepeatMode::{:?})", self.repeat_mode);
-                            self.next_track().await?;
-                        } else {
-                            debug!("TrackFinished set is_playing=false");
-                            self.is_playing = false;
+                } else {
+                    // Check repeat mode when queue is empty
+                    match self.repeat_mode {
+                        RepeatMode::One => {
+                            // Replay current track
+                            if let Some(idx) = self.current_track_index {
+                                debug!("RepeatOne: Replaying track at index {}", idx);
+                                self.play_track(idx).await?;
+                            }
+                        }
+                        RepeatMode::All | RepeatMode::Off => {
+                            // Normal autoplay behavior
+                            if self.autoplay {
+                                debug!("TrackFinished - auto-advancing (RepeatMode::{:?})", self.repeat_mode);
+                                self.next_track().await?;
+                            } else {
+                                debug!("TrackFinished set is_playing=false");
+                                self.is_playing = false;
+                            }
                         }
                     }
                 }
@@ -3313,7 +3380,7 @@ enum InteractiveEvent {
     SearchInput(char),
     SearchBackspace,
     // Playlist events
-
+    StartPlaylistCreation, // Shift+N - Start creating a new playlist
     DeletePlaylist,
     RenamePlaylist,
     AddToPlaylist,
