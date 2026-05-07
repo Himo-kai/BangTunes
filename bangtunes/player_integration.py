@@ -25,17 +25,8 @@ SOFTWARE.
 
 import os
 import subprocess
-import sqlite3
 from pathlib import Path
 from typing import Dict, Optional
-
-try:
-    import tomllib  # py3.11+
-except ImportError:
-    try:
-        import tomli as tomllib  # fallback for older Python
-    except ImportError:
-        tomllib = None
 
 from rich.console import Console
 
@@ -73,7 +64,6 @@ class BangTunesPlayer:
             player_config.get("config_dir", get_user_config_dir() / "bangtunes")
         )
         self.player_config_file = self.player_config_dir / "player.toml"
-        self.player_db = self.player_config_dir / "player.db"
 
         # Make sure config dir. exists
         self.player_config_dir.mkdir(parents=True, exist_ok=True)
@@ -127,105 +117,7 @@ theme = "default"
             f"[green]✅ Player config created at {self.player_config_file}[/green]"
         )
 
-    def sync_libraries(self) -> None:
-        """Sync BangTunes library data with player database"""
-        if not self.bangtunes_db.exists():
-            console.print("[yellow]⚠️  BangTunes library.db not found[/yellow]")
-            return
-
-        # Read BangTunes tracks
-        bangtunes_conn = sqlite3.connect(self.bangtunes_db)
-        cursor = bangtunes_conn.cursor()
-        cursor.execute("""
-            SELECT youtube_id, title, artist, album, file_path 
-            FROM tracks 
-            WHERE file_path IS NOT NULL
-        """)
-        tracks = cursor.fetchall()
-        bangtunes_conn.close()
-
-        if not tracks:
-            console.print("[yellow]⚠️  No tracks found in BangTunes library[/yellow]")
-            return
-
-        console.print(f"[cyan]📚 Syncing {len(tracks)} tracks to player...[/cyan]")
-
-        # Initialize player database if needed
-        self._init_player_db()
-
-        # Insert tracks into player database
-        player_conn = sqlite3.connect(self.player_db)
-        player_cursor = player_conn.cursor()
-
-        synced_count = 0
-        for youtube_id, title, artist, album, file_path in tracks:
-            if Path(file_path).exists():
-                try:
-                    # Insert track with BangTunes metadata
-                    player_cursor.execute(
-                        """
-                        INSERT OR REPLACE INTO tracks 
-                        (file_path, title, artist, album, youtube_id, duration_ms, content_hash)
-                        VALUES (?, ?, ?, ?, ?, NULL, NULL)
-                    """,
-                        (file_path, title, artist, album, youtube_id),
-                    )
-                    synced_count += 1
-                except sqlite3.Error as e:
-                    console.print(f"[red]❌ Error syncing {file_path}: {e}[/red]")
-
-        player_conn.commit()
-        player_conn.close()
-
-        console.print(
-            f"[green]✅ Synced {synced_count} tracks to player library[/green]"
-        )
-
-    def _init_player_db(self) -> None:
-        """Initialize player database schema"""
-        conn = sqlite3.connect(self.player_db)
-        cursor = conn.cursor()
-
-        # Create tracks table compatible with player
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS tracks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                file_path TEXT UNIQUE NOT NULL,
-                title TEXT,
-                artist TEXT,
-                album TEXT,
-                duration_ms INTEGER,
-                content_hash TEXT,
-                youtube_id TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create behavior tracking table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS behavior_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                track_id INTEGER NOT NULL,
-                event_type TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                play_duration_ms INTEGER,
-                skip_position_ms INTEGER,
-                FOREIGN KEY (track_id) REFERENCES tracks (id)
-            )
-        """)
-
-        # Create indexes
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(file_path)"
-        )
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist)")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_behavior_track ON behavior_events(track_id)"
-        )
-
-        conn.commit()
-        conn.close()
+    # Note: Rust player reads library.db directly - no sync needed
 
     def launch_player(self, track_path: Optional[str] = None) -> bool:
         """Launch BangTunes player"""
@@ -360,68 +252,7 @@ theme = "default"
             console.print(f"[red]❌ Build error: {e}[/red]")
             return False
 
-    def get_library_stats(self) -> Dict[str, int]:
-        """Get combined library statistics"""
-        stats = {"bangtunes_tracks": 0, "player_tracks": 0, "synced_tracks": 0}
-
-        # BangTunes stats
-        if self.bangtunes_db.exists():
-            conn = sqlite3.connect(self.bangtunes_db)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM tracks")
-            stats["bangtunes_tracks"] = cursor.fetchone()[0]
-            conn.close()
-
-        # Player stats
-        if self.player_db.exists():
-            conn = sqlite3.connect(self.player_db)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM tracks")
-            stats["player_tracks"] = cursor.fetchone()[0]
-
-            # Count synced tracks (those with youtube_id)
-            cursor.execute("SELECT COUNT(*) FROM tracks WHERE youtube_id IS NOT NULL")
-            stats["synced_tracks"] = cursor.fetchone()[0]
-            conn.close()
-
-        return stats
-
-    def status(self) -> None:
-        """Display player integration status"""
-        console.print("[bold]🎵 BangTunes Player Integration Status[/bold]")
-        console.print("=" * 50)
-
-        # Check player availability
-        if self.player_root.exists():
-            console.print(f"[green]✅ Player found at {self.player_root}[/green]")
-        else:
-            console.print(f"[red]❌ Player not found at {self.player_root}[/red]")
-            return
-
-        # Check configuration
-        if self.player_config_file.exists():
-            console.print(f"[green]✅ Config file: {self.player_config_file}[/green]")
-        else:
-            console.print(
-                f"[yellow]⚠️  Config file missing: {self.player_config_file}[/yellow]"
-            )
-
-        # Library stats
-        stats = self.get_library_stats()
-        console.print(f"[cyan]📚 BangTunes tracks: {stats['bangtunes_tracks']}[/cyan]")
-        console.print(f"[cyan]🎵 Player tracks: {stats['player_tracks']}[/cyan]")
-        console.print(f"[cyan]🔗 Synced tracks: {stats['synced_tracks']}[/cyan]")
-
-        # Check if binary is built
-        release_binary = self.player_root / "target" / "release" / "panpipe_interactive"
-        debug_binary = self.player_root / "target" / "debug" / "panpipe_interactive"
-
-        if release_binary.exists():
-            console.print("[green]✅ Player binary ready (release)[/green]")
-        elif debug_binary.exists():
-            console.print("[green]✅ Player binary ready (debug)[/green]")
-        else:
-            console.print("[red]❌ Player binary not built[/red]")
+    # Note: Old sync/status methods removed - commands.py handles these directly
 
 
 def create_integration(
