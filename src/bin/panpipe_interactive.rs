@@ -7,7 +7,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, LeaveAlternateScreen},
 };
-use fuzzy_matcher::{clangd::ClangdMatcher, FuzzyMatcher};
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use panpipe::{
     audio::{AudioPlayer, MusicScanner, metadata_parser::MetadataParser, scanner::ScanProgress, playlist::PlaylistManager, player::PlayerEvent},
     behavior::{BehaviorDatabase, BehaviorTracker, PlaybackEvent, SkipReason, weighting::ShuffleWeighting},
@@ -292,7 +292,7 @@ struct InteractiveApp {
     // Search functionality
     search_mode: bool,
     search_query: String,
-    fuzzy_matcher: ClangdMatcher,
+    fuzzy_matcher: SkimMatcherV2,
     
     // Playlist functionality
     playlist_manager: PlaylistManager,
@@ -425,7 +425,7 @@ impl InteractiveApp {
             show_help: false,
             search_mode: false,
             search_query: String::new(),
-            fuzzy_matcher: ClangdMatcher::default(),
+            fuzzy_matcher: SkimMatcherV2::default(),
             
             // Initialize playlist functionality
             playlist_manager: PlaylistManager::new("playlists".into()).map_err(|e| anyhow::anyhow!("{}", e))?,
@@ -1670,16 +1670,32 @@ impl InteractiveApp {
                 // Get current track state for this playlist
                 if let Some(track_state) = self.playlist_track_states.get_mut(&expanded_playlist_id) {
                     let current_track_idx = track_state.selected().unwrap_or(0);
-                    let next_track_idx = (current_track_idx + 1) % valid_tracks.len();
+                    let next_track_idx = current_track_idx + 1;
                     
-                    // Update playlist track selection
-                    track_state.select(Some(next_track_idx));
-                    
-                    if let Some(&actual_track_idx) = valid_tracks.get(next_track_idx) {
-                        debug!("🎵 Playing next track {} from playlist (track {} of {})", actual_track_idx, next_track_idx + 1, valid_tracks.len());
-                        self.play_track(actual_track_idx).await?;
+                    // Check if playlist ended
+                    if next_track_idx >= valid_tracks.len() {
+                        if self.repeat_mode == RepeatMode::All {
+                            // Wrap to beginning
+                            track_state.select(Some(0));
+                            if let Some(&actual_track_idx) = valid_tracks.first() {
+                                debug!("🎵 Playlist ended, repeating from start (RepeatAll)");
+                                self.play_track(actual_track_idx).await?;
+                            }
+                        } else {
+                            // Stop playback - playlist finished
+                            self.is_playing = false;
+                            self.set_status("⏹️ Playlist finished");
+                            debug!("🎵 Playlist finished (RepeatMode::{:?})", self.repeat_mode);
+                        }
                     } else {
-                        debug!("❌ Next track index {} not found in playlist", next_track_idx);
+                        // Normal next track
+                        track_state.select(Some(next_track_idx));
+                        if let Some(&actual_track_idx) = valid_tracks.get(next_track_idx) {
+                            debug!("🎵 Playing next track {} from playlist (track {} of {})", actual_track_idx, next_track_idx + 1, valid_tracks.len());
+                            self.play_track(actual_track_idx).await?;
+                        } else {
+                            debug!("❌ Next track index {} not found in playlist", next_track_idx);
+                        }
                     }
                 } else {
                     debug!("❌ No track state found for expanded playlist");
@@ -1801,10 +1817,9 @@ impl InteractiveApp {
         } else {
             debug!("🔍 Fuzzy searching for: '{}'", self.search_query);
             
-            // CRITICAL: ClangdMatcher parameter order is fuzzy_match(pattern, choice) NOT (choice, pattern)!
-        // This was the root cause of typo tolerance failing - we had the parameters backwards.
-        // The search query is the "pattern" and the track field is the "choice".
-        // Always use fuzzy_match(search_query, track_field)!
+            // Using SkimMatcherV2 for better typo tolerance and fuzzy matching.
+        // It uses Smith-Waterman algorithm with gap penalties for better partial matches.
+        // Parameter order: fuzzy_match(search_query, track_field)
             
             let mut scored_results: Vec<(usize, i64)> = Vec::new();
             let mut match_count = 0;
@@ -2682,7 +2697,7 @@ impl InteractiveApp {
             Line::from(""),
             Line::from(vec![Span::styled("💡 Tips:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))]),
             Line::from("  • Press ? for context-sensitive help overlay"),
-            Line::from("  • Favorites boost shuffle weight by 2x"),
+            Line::from("  • Favorites boost shuffle weight by 1.8x"),
             Line::from("  • Smart shuffle avoids recently played tracks"),
             Line::from("  • Press q or Esc to quit"),
         ];
@@ -3100,15 +3115,26 @@ impl InteractiveApp {
             PlayerEvent::TrackStarted(track) => {
                 self.set_status(&format!("▶️ Playing: {}", self.format_track_title(&track)));
             }
-            PlayerEvent::TrackFinished(track) => {
-                if self.autoplay {
-                    debug!("TrackFinished - auto-advancing for {}", self.format_track_title(&track));
-                    self.next_track().await?;
-                } else {
-                    debug!("TrackFinished set is_playing=false for {}", self.format_track_title(&track));
-                    // Just stop playing - don't auto-advance or reset track index
-                    // This preserves the current track display and progress bar state
-                    self.is_playing = false;
+            PlayerEvent::TrackFinished(_track) => {
+                // Check repeat mode first - RepeatOne takes priority
+                match self.repeat_mode {
+                    RepeatMode::One => {
+                        // Replay current track
+                        if let Some(idx) = self.current_track_index {
+                            debug!("RepeatOne: Replaying track at index {}", idx);
+                            self.play_track(idx).await?;
+                        }
+                    }
+                    RepeatMode::All | RepeatMode::Off => {
+                        // Normal autoplay behavior
+                        if self.autoplay {
+                            debug!("TrackFinished - auto-advancing (RepeatMode::{:?})", self.repeat_mode);
+                            self.next_track().await?;
+                        } else {
+                            debug!("TrackFinished set is_playing=false");
+                            self.is_playing = false;
+                        }
+                    }
                 }
             }
             PlayerEvent::DurationLearned(learned_track, actual_duration) => {
@@ -3159,6 +3185,15 @@ impl InteractiveApp {
                                 track_id: track.id,
                                 timestamp: chrono::Utc::now(),
                             }).await;
+                        }
+                        
+                        // Check repeat mode - RepeatOne takes priority
+                        if self.repeat_mode == RepeatMode::One {
+                            if let Some(idx) = self.current_track_index {
+                                debug!("RepeatOne: Replaying track at index {}", idx);
+                                let _ = self.play_track(idx).await;
+                            }
+                            return Ok(());
                         }
                         
                         // Autoplay next track with strict playlist isolation
