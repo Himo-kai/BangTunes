@@ -386,32 +386,48 @@ def cmd_install(args: Any, root: Path, config: Dict[str, Any]) -> int:
 
         # Check for seed.csv
         seed_path = root / "seed.csv"
+        example_seed_path = root / "seed.csv.example"
         if not seed_path.exists():
             if console:
                 console.print("\n[yellow]⚠️  No seed.csv found[/yellow]")
-                console.print("[dim]Creating example seed.csv...[/dim]")
             else:
                 print("\n⚠️  No seed.csv found")
-                print("Creating example seed.csv...")
 
-            # Create example seed file
-            example_seed = """title,artist,notes
+            if example_seed_path.exists():
+                # Prefer the committed template so users edit a real starting point
+                shutil.copy(example_seed_path, seed_path)
+                if console:
+                    console.print("[green]✓[/green] Copied seed.csv.example → seed.csv")
+                    console.print(
+                        "[dim]Edit seed.csv with your favorite tracks for discovery[/dim]"
+                    )
+                else:
+                    print("✓ Copied seed.csv.example → seed.csv")
+                    print("Edit seed.csv with your favorite tracks for discovery")
+            else:
+                # Fallback when no template exists (fresh clone without seed.csv.example)
+                if console:
+                    console.print("[dim]Creating example seed.csv...[/dim]")
+                else:
+                    print("Creating example seed.csv...")
+
+                example_seed = """title,artist,notes
 Bohemian Rhapsody,Queen,Classic rock anthem
 Hotel California,Eagles,Iconic guitar solo
 Stairway to Heaven,Led Zeppelin,Epic rock ballad
 Imagine,John Lennon,Peaceful message
 Sweet Child O' Mine,Guns N' Roses,Great guitar work"""
 
-            seed_path.write_text(example_seed)
+                seed_path.write_text(example_seed)
 
-            if console:
-                console.print("[green]✓[/green] Example seed.csv created")
-                console.print(
-                    "[dim]Edit seed.csv to add your favorite tracks for discovery[/dim]"
-                )
-            else:
-                print("✓ Example seed.csv created")
-                print("Edit seed.csv to add your favorite tracks for discovery")
+                if console:
+                    console.print("[green]✓[/green] Example seed.csv created")
+                    console.print(
+                        "[dim]Edit seed.csv to add your favorite tracks for discovery[/dim]"
+                    )
+                else:
+                    print("✓ Example seed.csv created")
+                    print("Edit seed.csv to add your favorite tracks for discovery")
         else:
             if console:
                 console.print("\n[green]✓[/green] Found existing seed.csv")
@@ -442,8 +458,6 @@ Sweet Child O' Mine,Guns N' Roses,Great guitar work"""
                 deps_ok = False
 
         # Check for yt-dlp
-        import shutil
-
         if shutil.which("yt-dlp"):
             if console:
                 console.print("[green]✓[/green] yt-dlp")

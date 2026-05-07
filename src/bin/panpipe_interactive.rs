@@ -2771,6 +2771,7 @@ impl InteractiveApp {
             Line::from("  -             Volume down"),
             Line::from("  z             Toggle smart shuffle"),
             Line::from("  r             Toggle repeat mode (Library tab only)"),
+            Line::from("  Shift+R       Toggle repeat mode (all tabs — use when in Playlists)"),
             Line::from(""),
             Line::from(vec![Span::styled("🎵 Library Features:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  ↑ / ↓         Navigate tracks"),
@@ -2783,7 +2784,6 @@ impl InteractiveApp {
             Line::from("  Enter         Expand/collapse playlist"),
             Line::from("  Shift+N       Create new playlist"),
             Line::from("  r             Rename playlist (Playlists tab)"),
-            Line::from("  Shift+R       Toggle repeat mode (all tabs)"),
             Line::from("  Shift+Q       Load playlist to queue"),
             Line::from("  x             Remove track from playlist"),
             Line::from("  Del           Delete playlist"),
@@ -3221,56 +3221,46 @@ impl InteractiveApp {
                 self.set_status(&format!("▶️ Playing: {}", self.format_track_title(&track)));
             }
             PlayerEvent::TrackFinished(_track) => {
-                // Queue takes priority over repeat mode - prevents stuck queue
+                // Queued tracks always play — the user explicitly requested them,
+                // so they bypass the autoplay toggle entirely.
                 if !self.queue.is_empty() {
                     debug!("TrackFinished - queue has items, advancing to queued track");
-                    if self.autoplay {
-                        self.next_track().await?;
-                    } else {
-                        self.is_playing = false;
-                    }
-                } else {
-                    // Check repeat mode when queue is empty
-                    match self.repeat_mode {
-                        RepeatMode::One => {
-                            // Replay current track
-                            if let Some(idx) = self.current_track_index {
-                                debug!("RepeatOne: Replaying track at index {}", idx);
-                                self.play_track(idx).await?;
-                            }
+                    self.next_track().await?;
+                    return Ok(());
+                }
+                // Queue empty: respect autoplay + repeat mode
+                match self.repeat_mode {
+                    RepeatMode::One => {
+                        if let Some(idx) = self.current_track_index {
+                            debug!("RepeatOne: Replaying track at index {}", idx);
+                            self.play_track(idx).await?;
                         }
-                        RepeatMode::All | RepeatMode::Off => {
-                            // Normal autoplay behavior
-                            if self.autoplay {
-                                debug!("TrackFinished - auto-advancing (RepeatMode::{:?})", self.repeat_mode);
-                                self.next_track().await?;
-                            } else {
-                                debug!("TrackFinished set is_playing=false");
-                                self.is_playing = false;
-                            }
+                    }
+                    RepeatMode::All | RepeatMode::Off => {
+                        if self.autoplay {
+                            debug!("TrackFinished - auto-advancing (RepeatMode::{:?})", self.repeat_mode);
+                            self.next_track().await?;
+                        } else {
+                            debug!("TrackFinished set is_playing=false");
+                            self.is_playing = false;
                         }
                     }
                 }
             }
             PlayerEvent::DurationLearned(learned_track, actual_duration) => {
-                // Find the track in our library and update its duration
                 if let Some(track_index) = self.tracks.iter().position(|t| t.id == learned_track.id) {
-                    // Update the track in our library using learn_duration method
                     self.tracks[track_index].learn_duration(actual_duration);
-                    
-                    // Show success message using duration_seconds method
+                    // Debug-only: fires during normal playback so we never overwrite "▶️ Playing: ..."
                     let duration_str = if let Some(secs) = self.tracks[track_index].duration_seconds() {
                         format!("{}:{:02}", secs / 60, secs % 60)
                     } else {
                         "Unknown".to_string()
                     };
-                    self.set_status(&format!("📏 Learned duration: {} ({})", 
-                        self.format_track_title(&learned_track), 
+                    debug!("📏 Learned duration: {} ({})",
+                        self.format_track_title(&learned_track),
                         duration_str
-                    ));
-                    
-                    // TODO: Persist the learned duration to database/file for future sessions
-                    // This could be done via the behavior tracker or a separate metadata store
+                    );
+                    // TODO: Persist learned duration to database for future sessions
                 }
             }
             PlayerEvent::TrackPaused => {

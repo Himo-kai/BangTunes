@@ -212,6 +212,29 @@ def test_invalid_command() -> None:
     )
 
 
+def test_install_copies_seed_from_example() -> None:
+    """install copies seed.csv.example → seed.csv when no seed.csv exists yet"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        example_path = Path(tmpdir) / "seed.csv.example"
+        example_content = "title,artist,notes\nCustom Track,Custom Artist,custom\n"
+        example_path.write_text(example_content)
+
+        result = subprocess.run(
+            [get_python_command(), "bang_tunes.py", "install"],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            env={"BANGTUNES_ROOT": tmpdir},
+        )
+
+        assert "Traceback" not in result.stderr
+        seed_path = Path(tmpdir) / "seed.csv"
+        assert seed_path.exists(), "seed.csv should be created from seed.csv.example"
+        assert seed_path.read_text() == example_content, (
+            "seed.csv should contain the example template content"
+        )
+
+
 if __name__ == "__main__":
     test_install_command()
     test_stats_command_empty_library()
@@ -223,4 +246,5 @@ if __name__ == "__main__":
     test_download_command_nonexistent_batch()
     test_list_metadata_issues_command_help()
     test_invalid_command()
+    test_install_copies_seed_from_example()
     print("All CLI command tests passed!")

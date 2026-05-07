@@ -140,21 +140,27 @@ target/
 **/*.rs.bk
 *.pdb
 
-# BangTunes specific
+# BangTunes — user data (never committed)
 library.db
 library.db-*
+library.db-shm
+library.db-wal
 download_archive.txt
 downloads/
-batches/*.csv
-!batches/example_*.csv
 logs/
 *.log
+
+# Generated batch files — user-specific discovery queues
+batches/*.csv
+
+# seed.csv is personal; commit only seed.csv.example as the template
+seed.csv
 
 # Configuration files with secrets
 bangtunes.toml
 !bangtunes.example.toml
 
-# Player specific
+# Player runtime data
 playlists/
 player.db
 player.db-*
