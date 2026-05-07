@@ -60,8 +60,8 @@ tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "time", "sy
 ratatui = { version = "0.28", optional = true }
 crossterm = { version = "0.28", optional = true }
 
-# Audio (gated by `audio`) - Enable M4A/AAC codec support via Symphonia
-rodio = { version = "0.19", optional = true, features = ["symphonia-aac", "symphonia-isomp4"] }
+# Audio (gated by `audio`) - Enable M4A/AAC and Opus codec support via Symphonia
+rodio = { version = "0.19", optional = true, features = ["symphonia-aac", "symphonia-isomp4", "symphonia-vorbis"] }
 
 # Library scanning + tags
 walkdir = "2.5"
