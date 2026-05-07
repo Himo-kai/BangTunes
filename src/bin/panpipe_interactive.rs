@@ -1296,7 +1296,7 @@ impl InteractiveApp {
                             self.current_playlist_id = Some(playlist_id);
                             
                             // Update filtered tracks to show playlist content
-                            self.filtered_tracks = (0..self.playlist_tracks.len()).collect();
+                            self.filtered_tracks = self.playlist_tracks.clone();
                             if !self.filtered_tracks.is_empty() {
                                 self.list_state.select(Some(0));
                             }
@@ -1804,36 +1804,7 @@ impl InteractiveApp {
             // CRITICAL: ClangdMatcher parameter order is fuzzy_match(pattern, choice) NOT (choice, pattern)!
         // This was the root cause of typo tolerance failing - we had the parameters backwards.
         // The search query is the "pattern" and the track field is the "choice".
-        // Test results: "the ouytside" vs "The Outside" works in reverse order (Some(290))
-        // but returns None in forward order. Always use fuzzy_match(search_query, track_field)!
-        
-        // Fuzzy matcher testing
-        let test_cases = [
-            ("the outside", "the outside"),     // Exact match
-            ("the outside", "the ouytside"),    // Original typo
-            ("the outside", "the outsyde"),     // Different typo
-            ("the outside", "outside"),         // Partial match
-            ("the outside", "the out"),         // Prefix match
-            ("the outside", "outside the"),     // Reversed
-        ];
-        
-        for (query, target) in &test_cases {
-                let score1 = self.fuzzy_matcher.fuzzy_match(query, target);
-                let score2 = self.fuzzy_matcher.fuzzy_match(target, query);
-                
-                // Simple similarity test for comparison
-                let simple_similarity = if target.contains(query) || query.contains(target) {
-                    100
-                } else if target.to_lowercase().contains(&query.to_lowercase()) || query.to_lowercase().contains(&target.to_lowercase()) {
-                    50
-                } else {
-                    0
-                };
-                
-                debug!("🔍 Fuzzy test: '{}' vs '{}' = {:?} (forward)", target, query, score1);
-                debug!("🔍 Fuzzy test: '{}' vs '{}' = {:?} (reverse)", query, target, score2);
-                debug!("🔍 Simple similarity: '{}' vs '{}' = {}", target, query, simple_similarity);
-            }
+        // Always use fuzzy_match(search_query, track_field)!
             
             let mut scored_results: Vec<(usize, i64)> = Vec::new();
             let mut match_count = 0;
@@ -2987,7 +2958,7 @@ impl InteractiveApp {
             Line::from(""),
             Line::from(vec![Span::styled("Navigation:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  ↑/↓           Navigate tracks (no auto-play)"),
-            Line::from("  1/2/3         Switch tabs (Library/Metadata Editor/Settings)"),
+            Line::from("  1/2/3/4       Switch tabs (Library/Playlists/Metadata Editor/Settings)"),
             Line::from("  /             Enter search mode (fuzzy search)"),
             Line::from("  ?             Toggle this help"),
             Line::from("  q             Quit"),
@@ -3131,10 +3102,10 @@ impl InteractiveApp {
             }
             PlayerEvent::TrackFinished(track) => {
                 if self.autoplay {
-                    self.set_status(&format!("🔧 DEBUG: TrackFinished - auto-advancing for {}", self.format_track_title(&track)));
+                    debug!("TrackFinished - auto-advancing for {}", self.format_track_title(&track));
                     self.next_track().await?;
                 } else {
-                    self.set_status(&format!("🔧 DEBUG: TrackFinished set is_playing=false for {}", self.format_track_title(&track)));
+                    debug!("TrackFinished set is_playing=false for {}", self.format_track_title(&track));
                     // Just stop playing - don't auto-advance or reset track index
                     // This preserves the current track display and progress bar state
                     self.is_playing = false;

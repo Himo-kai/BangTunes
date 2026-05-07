@@ -322,9 +322,11 @@ impl PlaylistManager {
         Ok(())
     }
 
-    /// List all playlists
+    /// List all playlists (sorted by name for deterministic ordering)
     pub fn list_playlists(&self) -> Vec<&Playlist> {
-        self.playlists.values().collect()
+        let mut playlists: Vec<&Playlist> = self.playlists.values().collect();
+        playlists.sort_by(|a, b| a.name.cmp(&b.name));
+        playlists
     }
 
     /// Get playlist statistics
