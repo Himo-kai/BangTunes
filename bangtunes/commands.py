@@ -1400,58 +1400,57 @@ def cmd_player(args: Any, root: Path, config: Dict[str, Any]) -> int:
                 return _setup_player_generic(root, console)
 
         elif cmd == "sync":
-            # Sync BangTunes library with player database
-            try:
-                from bangtunes.player_integration import create_integration
-                from bangtunes.config import load_config
-
-                config = load_config(root)
-                integration = create_integration(root, config)
-                integration.sync_libraries()
-                return 0
-            except ImportError:
-                if console:
-                    console.print("[red]❌ Player integration not available[/red]")
-                    console.print(
-                        "[dim]Run 'python bang_tunes.py setup-player' first[/dim]"
-                    )
-                else:
-                    print("❌ Player integration not available")
-                    print("Run 'python bang_tunes.py setup-player' first")
-                return 1
-            except Exception as e:
-                if console:
-                    console.print(f"[red]❌ Sync failed: {e}[/red]")
-                else:
-                    print(f"❌ Sync failed: {e}")
-                return 1
+            # library.db IS the player database - Rust player reads it directly
+            # No separate sync step needed
+            db_path = root / "library.db"
+            db_conn = get_db(db_path)
+            tracks = db_get_all_tracks(db_conn)
+            if console:
+                console.print(f"[green]✅ Library ready — {len(tracks)} tracks available to player[/green]")
+                console.print("[dim]The player reads library.db directly — no sync step needed[/dim]")
+            else:
+                print(f"✅ Library ready — {len(tracks)} tracks available to player")
+            return 0
 
         elif cmd == "player-status":
-            # Show player integration status
-            try:
-                from bangtunes.player_integration import create_integration
-                from bangtunes.config import load_config
-
-                config = load_config(root)
-                integration = create_integration(root, config)
-                integration.status()
-                return 0
-            except ImportError:
-                if console:
-                    console.print("[red]❌ Player integration not available[/red]")
-                    console.print(
-                        "[dim]Run 'python bang_tunes.py setup-player' first[/dim]"
-                    )
+            # Show genuine player status - library + binary availability
+            db_path = root / "library.db"
+            db_conn = get_db(db_path)
+            tracks = db_get_all_tracks(db_conn)
+            
+            # Check binary using same path logic as play command
+            target_root = None
+            if (root / "Cargo.toml").exists():
+                target_root = (root / "target").resolve()
+            
+            panpipe_paths = [
+                target_root / "release" / "panpipe_interactive",
+                target_root / "debug" / "panpipe_interactive",
+                (root / "target" / "release" / "panpipe_interactive").resolve(),
+                (root / "target" / "debug" / "panpipe_interactive").resolve(),
+            ] if target_root else []
+            
+            panpipe_binary = None
+            for path in panpipe_paths:
+                if path.exists():
+                    panpipe_binary = str(path)
+                    break
+            
+            if console:
+                console.print("[bold]🎵 BangTunes Player Status[/bold]")
+                console.print(f"Library: {len(tracks)} tracks in library.db")
+                if panpipe_binary:
+                    console.print(f"[green]✅ Player binary: {panpipe_binary}[/green]")
                 else:
-                    print("❌ Player integration not available")
-                    print("Run 'python bang_tunes.py setup-player' first")
-                return 1
-            except Exception as e:
-                if console:
-                    console.print(f"[red]❌ Status check failed: {e}[/red]")
+                    console.print("[red]❌ Player binary not found — run setup-player[/red]")
+            else:
+                print("🎵 BangTunes Player Status")
+                print(f"Library: {len(tracks)} tracks in library.db")
+                if panpipe_binary:
+                    print(f"✅ Player binary: {panpipe_binary}")
                 else:
-                    print(f"❌ Status check failed: {e}")
-                return 1
+                    print("❌ Player binary not found — run setup-player")
+            return 0
 
         else:
             if console:

@@ -2,7 +2,6 @@
 // Built with ratatui because ncurses is a pain and this actually works
 // Note: Main TUI app is in src/bin/panpipe_interactive.rs
 
-mod components; // reusable UI widgets
 pub mod events; // keyboard/mouse event handling
 
 pub use events::{AppEvent, EventHandler};

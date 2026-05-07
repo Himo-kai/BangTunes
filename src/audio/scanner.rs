@@ -116,15 +116,16 @@ impl MusicScanner {
             }
         }
         
-        // Deduplicate tracks using content hash comparison
-        self.deduplicate_tracks(&mut all_tracks);
+        // Note: Deduplication not done here for performance (reads 64KB per file).
+        // Call deduplicate_tracks() explicitly when needed for de-duping.
         
         Ok(all_tracks)
     }
     
     /// Remove duplicate tracks based on content hash, keeping the first occurrence
     /// Also log moved files (same content, different path)
-    fn deduplicate_tracks(&self, tracks: &mut Vec<Track>) {
+    /// Note: This reads the first 64KB of each file for content hashing - use sparingly.
+    pub fn deduplicate_tracks(&self, tracks: &mut Vec<Track>) {
         let mut unique_tracks: Vec<Track> = Vec::new();
         let mut seen_hashes = std::collections::HashSet::new();
         

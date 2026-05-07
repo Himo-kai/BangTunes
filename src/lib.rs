@@ -5,8 +5,6 @@ pub mod audio;     // handles playback, scanning, metadata
 pub mod behavior;  // tracks what you like/skip
 pub mod config;    // settings and preferences
 pub mod database;  // BangTunes database integration
-pub mod export;    // playlist export features
-pub mod spotify;   // spotify integration (when needed)
 pub mod ui;        // terminal interface helpers (TerminalManager, EventHandler)
 
 // Export the stuff other modules actually use
