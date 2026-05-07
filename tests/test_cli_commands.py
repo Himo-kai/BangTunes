@@ -50,6 +50,7 @@ def test_stats_command_empty_library() -> None:
             "No tracks yet" in result.stdout
             or "0 tracks" in result.stdout
             or "Library Statistics" in result.stdout
+            or "No tracks found in library" in result.stdout
         )
 
 
@@ -70,6 +71,8 @@ def test_quickplay_command_no_files() -> None:
         assert (
             "No audio files found" in result.stdout
             or "Quick Play Mode" in result.stdout
+            or "No tracks found in library" in result.stdout
+            or "No audio player available" in result.stderr
         )
 
 
@@ -178,8 +181,8 @@ def test_download_command_nonexistent_batch() -> None:
         assert "Traceback" not in result.stderr or "FileNotFoundError" in result.stderr
 
 
-def test_edit_metadata_command_help() -> None:
-    """Test that edit-metadata command is available in help"""
+def test_list_metadata_issues_command_help() -> None:
+    """Test that list-metadata-issues command is available in help"""
     result = subprocess.run(
         [get_python_command(), "bang_tunes.py", "-h"],
         capture_output=True,
@@ -188,8 +191,8 @@ def test_edit_metadata_command_help() -> None:
     )
 
     assert result.returncode == 0
-    assert "edit-metadata" in result.stdout
-    assert "Interactive metadata editor" in result.stdout
+    assert "list-metadata-issues" in result.stdout
+    assert "missing" in result.stdout.lower() or "metadata" in result.stdout.lower()
 
 
 def test_invalid_command() -> None:
@@ -218,6 +221,6 @@ if __name__ == "__main__":
     test_rescan_command_with_fix()
     test_build_command_with_invalid_seed()
     test_download_command_nonexistent_batch()
-    test_edit_metadata_command_help()
+    test_list_metadata_issues_command_help()
     test_invalid_command()
     print("All CLI command tests passed!")

@@ -792,8 +792,11 @@ impl InteractiveApp {
             (InteractiveEvent::DeletePlaylist, AppTab::Playlists, EditMode::None) => true,
             (InteractiveEvent::AddToPlaylist, AppTab::Library, EditMode::None) => true,
             
-            // 'r' key context-sensitive handling
+            // ToggleRepeat: 'r' key only in Library (Playlists uses 'r' for rename),
+            // but Shift+R is the global repeat toggle and works on all tabs.
             (InteractiveEvent::ToggleRepeat, AppTab::Library, EditMode::None) => true,
+            (InteractiveEvent::ToggleRepeat, AppTab::Playlists, EditMode::None) => true,
+            (InteractiveEvent::ToggleRepeat, AppTab::Settings, EditMode::None) => true,
             (InteractiveEvent::ToggleRepeat, AppTab::MetadataEditor, EditMode::None) => false, // Block in metadata editor
             
             // Playback controls work in both tabs when not editing
@@ -2767,7 +2770,7 @@ impl InteractiveApp {
             Line::from("  + / =         Volume up"),
             Line::from("  -             Volume down"),
             Line::from("  z             Toggle smart shuffle"),
-            Line::from("  r             Toggle repeat mode"),
+            Line::from("  r             Toggle repeat mode (Library tab only)"),
             Line::from(""),
             Line::from(vec![Span::styled("🎵 Library Features:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  ↑ / ↓         Navigate tracks"),
@@ -3299,7 +3302,15 @@ impl InteractiveApp {
                             }).await;
                         }
                         
-                        // Check repeat mode - RepeatOne takes priority
+                        // Queue takes priority even over RepeatOne — a manually queued
+                        // track is an explicit user intent and should not be blocked by repeat.
+                        if !self.queue.is_empty() {
+                            debug!("TrackStopped - queue has items, advancing (RepeatOne deferred)");
+                            let _ = self.next_track().await;
+                            return Ok(());
+                        }
+
+                        // RepeatOne: replay current track (only when queue is empty)
                         if self.repeat_mode == RepeatMode::One {
                             if let Some(idx) = self.current_track_index {
                                 debug!("RepeatOne: Replaying track at index {}", idx);
@@ -3307,7 +3318,7 @@ impl InteractiveApp {
                             }
                             return Ok(());
                         }
-                        
+
                         // Autoplay next track with strict playlist isolation
                         if self.current_tab == AppTab::Playlists && !self.expanded_playlists.is_empty() {
                             // Autoplay within the expanded playlist only
