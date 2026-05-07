@@ -1547,10 +1547,10 @@ def _setup_player_termux(root: Path, console: Optional[Any]) -> int:
     build_env.pop("RUSTFLAGS", None)  # Remove, don't blank
 
     # Single canonical build command for Termux - no multiple strategies
-    # No desktop targets, no invalid flags, just simple clean build
+    # No desktop targets, no invalid flags, headless mode (no rodio/ALSA)
     build_strategies = [
-        # Only one strategy - the simplest and most reliable
-        ["cargo", "build", "--release", "--bin", "panpipe_interactive"],
+        # Only one strategy - headless TUI build without audio backend
+        ["cargo", "build", "--release", "--bin", "panpipe_interactive", "--no-default-features", "--features", "termux"],
     ]
 
     for i, strategy in enumerate(build_strategies, 1):

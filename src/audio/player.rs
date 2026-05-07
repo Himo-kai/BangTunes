@@ -185,7 +185,7 @@ impl AudioPlayer {
                         
                         if still_empty {
                             // Confirmed: track actually finished
-                            let _ = sender_clone.send(PlayerEvent::TrackStopped);
+                            let _ = sender_clone.send(PlayerEvent::TrackFinished(track_clone));
                             break;
                         }
                     }
