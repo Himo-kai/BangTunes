@@ -199,6 +199,16 @@ impl BehaviorTracker {
         // Note: file_path is required but we don't have it here, so we use a placeholder
         self.database.save_track_metadata(track_id, "unknown_path", Some(title), Some(artist), Some(album), None, None).await
     }
+
+    /// Persist a duration learned from actual playback so it survives restart.
+    pub async fn save_learned_duration(&self, track_id: Uuid, duration_secs: u64) -> Result<()> {
+        self.database.save_track_duration(track_id, duration_secs).await
+    }
+
+    /// Retrieve a previously persisted learned duration (seconds), if any.
+    pub async fn get_track_duration(&self, track_id: Uuid) -> Result<Option<u64>> {
+        self.database.get_track_duration(track_id).await
+    }
     
     /// Toggle the "favorite" tag on a track.
     /// Returns true if the track is now a favorite, false if it was removed.

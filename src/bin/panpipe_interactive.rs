@@ -262,6 +262,7 @@ struct InteractiveApp {
     queue_replace_confirmation: bool, // Waiting for Y/N to replace queue with playlist
     queue_replace_playlist_id: Option<String>, // Playlist to load if confirmed
     favorites: std::collections::HashSet<uuid::Uuid>, // Cached favorite track IDs for fast lookup
+    failed_tracks: std::collections::HashSet<uuid::Uuid>, // Tracks that failed to decode; skipped in playback
     
     // Time tracking
     current_position: Duration,
@@ -339,7 +340,7 @@ enum RepeatMode {
 // Visualizer enum removed for performance optimization
 
 impl InteractiveApp {
-    async fn new(config: Config, tracks: Vec<panpipe::Track>) -> Result<Self> {
+    async fn new(config: Config, mut tracks: Vec<panpipe::Track>) -> Result<Self> {
         let terminal = TerminalManager::new()?;
         let event_handler = EventHandler::new();
         let mut audio_player = AudioPlayer::new(config.clone().into())?;
@@ -369,6 +370,13 @@ impl InteractiveApp {
         let (audio_event_tx, audio_event_rx) = mpsc::unbounded_channel();
         audio_player.set_event_sender(audio_event_tx);
         
+        // Restore learned durations from previous sessions so --:-- doesn't reappear after restart
+        for track in &mut tracks {
+            if let Ok(Some(dur_secs)) = behavior_tracker.get_track_duration(track.id).await {
+                track.learn_duration(std::time::Duration::from_secs(dur_secs));
+            }
+        }
+
         // Initialize filtered tracks (show all initially)
         let filtered_tracks: Vec<usize> = (0..tracks.len()).collect();
         
@@ -407,6 +415,7 @@ impl InteractiveApp {
             queue_replace_confirmation: false,
             queue_replace_playlist_id: None,
             favorites,
+            failed_tracks: std::collections::HashSet::new(),
             current_position: Duration::from_secs(0),
             total_duration: None,
             last_position_update: Instant::now(),
@@ -531,9 +540,10 @@ impl InteractiveApp {
         use crossterm::event::KeyModifiers;
         
         match (key.code, key.modifiers) {
-            // Exit search mode
+            // Esc clears the query and restores the full library
             (KeyCode::Esc, _) => Some(InteractiveEvent::ExitSearch),
-            (KeyCode::Enter, _) => Some(InteractiveEvent::ExitSearch),
+            // Enter locks in filtered results and exits input mode (results remain visible)
+            (KeyCode::Enter, _) => Some(InteractiveEvent::ConfirmSearch),
             
             // Search input handling
             (KeyCode::Backspace, _) => Some(InteractiveEvent::SearchBackspace),
@@ -617,7 +627,7 @@ impl InteractiveApp {
                 }
             }
             (KeyCode::Char('p'), KeyModifiers::NONE) => Some(InteractiveEvent::PreviousTrack),
-            (KeyCode::Char('s'), KeyModifiers::NONE) => Some(InteractiveEvent::Stop),
+            (KeyCode::Char('s'), KeyModifiers::NONE) => Some(InteractiveEvent::ToggleShuffle),
             (KeyCode::Char('+'), KeyModifiers::NONE) | (KeyCode::Char('='), KeyModifiers::NONE) => Some(InteractiveEvent::VolumeUp),
             (KeyCode::Char('-'), KeyModifiers::NONE) => Some(InteractiveEvent::VolumeDown),
             (KeyCode::Char('z'), KeyModifiers::NONE) => Some(InteractiveEvent::ToggleShuffle),
@@ -758,6 +768,7 @@ impl InteractiveApp {
             // Search events - should work globally
             (InteractiveEvent::EnterSearch, _, _) => true,
             (InteractiveEvent::ExitSearch, _, _) => true,
+            (InteractiveEvent::ConfirmSearch, _, _) => true,
             (InteractiveEvent::SearchInput(_), _, _) => true,
             (InteractiveEvent::SearchBackspace, _, _) => true,
             
@@ -775,6 +786,8 @@ impl InteractiveApp {
             // Editing mode events (highest priority)
             (InteractiveEvent::SaveMetadata, _, EditMode::Title | EditMode::Artist) => true,
             (InteractiveEvent::CancelEdit, _, EditMode::Title | EditMode::Artist) => true,
+            // Esc also clears a confirmed search when not in any edit mode
+            (InteractiveEvent::CancelEdit, _, EditMode::None) => !self.search_query.is_empty(),
             (InteractiveEvent::Backspace, _, EditMode::Title | EditMode::Artist) => true,
             (InteractiveEvent::Input(_), _, EditMode::Title | EditMode::Artist) => true,
             
@@ -804,7 +817,6 @@ impl InteractiveApp {
             (InteractiveEvent::Play, _, EditMode::None) => true,
             (InteractiveEvent::NextTrack, _, EditMode::None) => true,
             (InteractiveEvent::PreviousTrack, _, EditMode::None) => true,
-            (InteractiveEvent::Stop, _, EditMode::None) => true,
             (InteractiveEvent::ToggleShuffle, _, EditMode::None) => true,
             (InteractiveEvent::ToggleAutoplay, _, EditMode::None) => true,
             (InteractiveEvent::VolumeUp, _, EditMode::None) => true,
@@ -948,12 +960,6 @@ impl InteractiveApp {
             }
             InteractiveEvent::PreviousTrack => {
                 self.previous_track().await?;
-            }
-            InteractiveEvent::Stop => {
-                self.audio_player.stop()?;
-                self.is_playing = false;
-                self.current_track_index = None;
-                self.set_status("⏹️ Stopped");
             }
             InteractiveEvent::VolumeUp => {
                 self.volume = (self.volume + 0.1).min(1.0);
@@ -1167,6 +1173,13 @@ impl InteractiveApp {
                     self.set_status("📋 Queue closed");
                     return Ok(()); // Don't fall through to edit cancel
                 }
+                // Esc clears a confirmed search (query set but search_mode=false)
+                if !self.search_query.is_empty() && !self.search_mode {
+                    self.search_query.clear();
+                    self.reset_to_full_library();
+                    self.set_status("🔍 Search cleared");
+                    return Ok(());
+                }
                 self.edit_mode = EditMode::None;
                 self.editing_track_index = None;
                 self.edit_title.clear();
@@ -1246,7 +1259,19 @@ impl InteractiveApp {
                 self.search_query.clear();
                 self.reset_to_full_library();
                 debug!("🔍 Search mode exited");
-                self.set_status("🔍 Search exited");
+                self.set_status("🔍 Search cleared");
+            }
+            InteractiveEvent::ConfirmSearch => {
+                // Keep filtered_tracks as-is; just dismiss the input overlay so the
+                // user can navigate the results without the search bar in the way.
+                self.search_mode = false;
+                let count = self.filtered_tracks.len();
+                debug!("🔍 Search confirmed: {} results for '{}'", count, self.search_query);
+                if count == 0 {
+                    self.set_status("🔍 No results — press / to search again, Esc to clear");
+                } else {
+                    self.set_status(&format!("🔍 {} result{} for '{}' — Esc to clear, / to refine", count, if count == 1 { "" } else { "s" }, self.search_query));
+                }
             }
             InteractiveEvent::SearchInput(c) => {
                 debug!("🔍 Search input: '{}' (char code: {})", c, c as u32);
@@ -1773,8 +1798,10 @@ impl InteractiveApp {
                     debug!("🎵 Using intelligent shuffle weighting for next track");
                     
                     // Get track IDs for available tracks
+                    // Exclude tracks that previously failed to decode from the shuffle pool
                     let available_track_ids: Vec<uuid::Uuid> = self.filtered_tracks.iter()
                         .map(|&idx| self.tracks[idx].id)
+                        .filter(|id| !self.failed_tracks.contains(id))
                         .collect();
                     
                     // Get behaviors from behavior tracker
@@ -1829,15 +1856,32 @@ impl InteractiveApp {
                     }
                 };
                 
-                self.list_state.select(Some(next_idx));
-                let track_idx = self.filtered_tracks[next_idx];
+                // Skip tracks that previously failed to decode
+                let final_idx = {
+                    let len = self.filtered_tracks.len();
+                    let mut candidate = next_idx;
+                    let mut attempts = 0;
+                    while attempts < len {
+                        let t_idx = self.filtered_tracks[candidate];
+                        if self.failed_tracks.contains(&self.tracks[t_idx].id) {
+                            candidate = (candidate + 1) % len;
+                            attempts += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    candidate
+                };
+
+                self.list_state.select(Some(final_idx));
+                let track_idx = self.filtered_tracks[final_idx];
                 self.play_track(track_idx).await?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     async fn previous_track(&mut self) -> Result<()> {
         // Check if we're in playlist context first
         if self.current_tab == AppTab::Playlists && !self.expanded_playlists.is_empty() {
@@ -2764,12 +2808,11 @@ impl InteractiveApp {
             Line::from(vec![Span::styled("⌨️ Playback Controls:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  Space         Toggle play/pause"),
             Line::from("  p             Play selected track"),
-            Line::from("  s             Stop playback"),
             Line::from("  n / →         Next track"),
             Line::from("  b / ←         Previous track"),
             Line::from("  + / =         Volume up"),
             Line::from("  -             Volume down"),
-            Line::from("  z             Toggle smart shuffle"),
+            Line::from("  s / z         Toggle smart shuffle"),
             Line::from("  r             Toggle repeat mode (Library tab only)"),
             Line::from("  Shift+R       Toggle repeat mode (all tabs — use when in Playlists)"),
             Line::from(""),
@@ -3250,17 +3293,14 @@ impl InteractiveApp {
             PlayerEvent::DurationLearned(learned_track, actual_duration) => {
                 if let Some(track_index) = self.tracks.iter().position(|t| t.id == learned_track.id) {
                     self.tracks[track_index].learn_duration(actual_duration);
-                    // Debug-only: fires during normal playback so we never overwrite "▶️ Playing: ..."
-                    let duration_str = if let Some(secs) = self.tracks[track_index].duration_seconds() {
-                        format!("{}:{:02}", secs / 60, secs % 60)
-                    } else {
-                        "Unknown".to_string()
-                    };
-                    debug!("📏 Learned duration: {} ({})",
+                    let duration_secs = actual_duration.as_secs();
+                    let track_id = self.tracks[track_index].id;
+                    // Persist so the duration is shown correctly on the next playthrough
+                    let _ = self.behavior_tracker.save_learned_duration(track_id, duration_secs).await;
+                    debug!("📏 Learned + persisted duration: {} ({}:{:02})",
                         self.format_track_title(&learned_track),
-                        duration_str
+                        duration_secs / 60, duration_secs % 60
                     );
-                    // TODO: Persist learned duration to database for future sessions
                 }
             }
             PlayerEvent::TrackPaused => {
@@ -3349,14 +3389,38 @@ impl InteractiveApp {
                 self.set_status(&format!("🔊 Volume: {}%", (volume * 100.0) as u32));
             }
             PlayerEvent::Error(error) => {
-                // Filter out known ALSA underrun errors to avoid UI spam
                 let error_str = error.to_string();
                 if error_str.contains("underrun occurred") || error_str.contains("snd_pcm_recover") {
-                    // Log ALSA underruns but don't show in UI (these are common and non-critical)
-                    debug!("🔊 ALSA underrun occurred (audio buffer issue, non-critical)");
+                    // ALSA buffer underruns are non-critical; suppress from UI
+                    debug!("🔊 ALSA underrun (non-critical)");
+                } else if error_str.contains("Unsupported audio format")
+                    || error_str.contains("corrupted file")
+                    || error_str.contains("Failed to open file")
+                    || error_str.contains("NoSupportedCodec")
+                    || error_str.contains("IoError")
+                {
+                    // Decode/file errors: identify the failing track, flag it, skip to next
+                    let (track_id, track_label) = if let Some(idx) = self.current_track_index {
+                        let t = &self.tracks[idx];
+                        (Some(t.id), self.format_track_title(t))
+                    } else {
+                        (None, "unknown track".to_string())
+                    };
+
+                    if let Some(id) = track_id {
+                        self.failed_tracks.insert(id);
+                        debug!("⚠️ Flagged track {} as failed: {}", id, error_str);
+                    }
+
+                    self.is_playing = false;
+                    self.set_status(&format!("⚠️ Skipping '{}' — {}", track_label, error_str));
+
+                    // Auto-advance so the listener doesn't have to intervene
+                    if self.autoplay && !self.tracks.is_empty() {
+                        let _ = self.next_track().await;
+                    }
                 } else {
-                    // Show other audio errors in UI
-                    self.set_status(&format!("❌ Audio Error: {}", error));
+                    self.set_status(&format!("❌ Audio error: {}", error));
                 }
             }
             PlayerEvent::PositionChanged(_position) => {
@@ -3392,7 +3456,6 @@ enum InteractiveEvent {
     TogglePlayPause,
     NextTrack,
     PreviousTrack,
-    Stop,
     Up,
     Down,
     VolumeUp,
@@ -3422,7 +3485,8 @@ enum InteractiveEvent {
     Backspace,
     // Search events
     EnterSearch,
-    ExitSearch,
+    ExitSearch,       // Esc — clear query, restore full library
+    ConfirmSearch,    // Enter — lock in results, exit input overlay, keep filtered view
     SearchInput(char),
     SearchBackspace,
     // Playlist events

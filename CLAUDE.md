@@ -125,6 +125,24 @@ seed.csv → build → batches/mix_NNN.csv → download → downloads/ + library
 - **Track UUIDs are deterministic** (UUIDv5) so library rescans don't break behavior history.
 - **Config search order**: `~/.config/bangtunes.toml` first, then `./bangtunes.toml`. `_deep_merge` lets local overrides win.
 
+## Audio Format Support (rodio / Symphonia)
+
+The Rust player uses **rodio** with the **Symphonia** backend. Supported formats:
+
+| Format | Status |
+|--------|--------|
+| MP3 | ✅ Supported |
+| AAC / M4A | ✅ Supported (Symphonia) |
+| OGG Vorbis | ✅ Supported |
+| FLAC | ✅ Supported |
+| WAV | ✅ Supported |
+| Opus | ✅ Supported |
+| MP4 video | ❌ Not supported (audio-only M4A works) |
+| WMA | ❌ Not supported |
+| AIFF | ❌ Not supported |
+
+When a file fails to decode, `panpipe_interactive` emits `PlayerEvent::Error` with "Unsupported audio format or corrupted file". The TUI auto-skips the track, marks it in the in-memory `failed_tracks` set (excluded from future shuffle/sequential playback for the session), and shows which file failed in the status bar.
+
 ## Testing
 
 Tests live in `tests/` and are pytest smoke tests — they call the actual CLI via subprocess to validate the real pipeline, not mocked internals. Run fast (~0.4s). Integration tests are marked `@pytest.mark.integration`.

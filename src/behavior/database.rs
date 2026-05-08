@@ -165,12 +165,23 @@ impl BehaviorDatabase {
         let mut stmt = self.conn.prepare(
             "SELECT duration FROM track_metadata WHERE track_id = ?1"
         )?;
-        
+
         let duration = stmt.query_row(params![track_id.to_string()], |row| {
             Ok(row.get::<_, Option<i64>>(0)?.map(|d| d as u64))
         }).optional()?.flatten();
-        
+
         Ok(duration)
+    }
+
+    /// Persist a learned duration (seconds) without touching other metadata fields.
+    pub async fn save_track_duration(&self, track_id: Uuid, duration_secs: u64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO track_metadata (track_id, file_path, duration)
+             VALUES (?1, '', ?2)
+             ON CONFLICT(track_id) DO UPDATE SET duration = excluded.duration",
+            params![track_id.to_string(), duration_secs as i64],
+        )?;
+        Ok(())
     }
     
     pub async fn save_track_metadata(
