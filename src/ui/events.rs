@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
@@ -35,15 +38,10 @@ pub enum AppEvent {
     
     // Library Events
     RefreshLibrary,
-    ShowDatabaseStats,
-    ShowTrackInfo,
-    ShowBehaviorStats,
-    GenerateSmartPlaylist,
-    ExportPlaylist,
-    ConnectSpotify,
-    ManagePlaylists,
 }
 
+/// Terminal input handler — translates crossterm key events into `AppEvent`s.
+/// Also exposes a `quit_flag` `Arc<AtomicBool>` used by `panpipe_interactive` to signal shutdown.
 pub struct EventHandler {
     event_sender: mpsc::UnboundedSender<AppEvent>,
     event_receiver: mpsc::UnboundedReceiver<AppEvent>,

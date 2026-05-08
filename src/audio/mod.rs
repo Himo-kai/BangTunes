@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 // Audio engine - the heart of BangTunes playback
 // Handles all the messy audio stuff so the UI doesn't have to
 // Handles everything from file scanning to actual audio output
@@ -14,6 +17,7 @@ pub use scanner::MusicScanner;
 
 
 
+/// Audio playback configuration controlling volume, crossfade timing, and buffer sizes.
 #[derive(Debug, Clone)]
 pub struct AudioConfig {
     pub volume: f32, // 0.0 to 1.0
@@ -47,6 +51,7 @@ impl From<crate::config::Config> for AudioConfig {
     }
 }
 
+/// Supported audio container/codec formats recognized by the scanner and player.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum AudioFormat {
     Mp3,

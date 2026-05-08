@@ -67,6 +67,7 @@ rodio = { version = "0.19", optional = true, features = ["symphonia-aac", "symph
 walkdir = "2.5"
 id3 = "1.14"
 mp4ameta = "0.11"
+metaflac = "0.2"
 
 # Optional deeper format probing (gate behind `probe`)
 symphonia = { version = "0.5", default-features = false, optional = true, features = [

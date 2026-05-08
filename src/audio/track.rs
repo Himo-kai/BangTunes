@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use super::AudioFormat;
 use anyhow::Result;
 use id3::TagLike;
@@ -9,6 +12,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use xxhash_rust::xxh64::xxh64;
 
+/// A music file on disk with its resolved metadata and playback info.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
     pub id: Uuid,
@@ -20,7 +24,9 @@ pub struct Track {
     pub content_hash: Option<u64>, // xxhash64 for deduplication and move detection
 }
 
+/// Tag metadata extracted from the audio file (ID3, Vorbis comments, iTunes atoms).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct TrackMetadata {
     pub title: Option<String>,
     pub artist: Option<String>,
@@ -107,11 +113,7 @@ impl Track {
             }
             Some(existing) => {
                 // Update if the difference is more than 2 seconds (accounts for fade-outs, etc.)
-                let diff = if actual_duration > existing {
-                    actual_duration - existing
-                } else {
-                    existing - actual_duration
-                };
+                let diff = actual_duration.abs_diff(existing);
                 
                 if diff > Duration::from_secs(2) {
                     self.duration = Some(actual_duration);
@@ -170,21 +172,6 @@ impl Track {
     }
 }
 
-impl Default for TrackMetadata {
-    fn default() -> Self {
-        Self {
-            title: None,
-            artist: None,
-            album: None,
-            album_artist: None,
-            track_number: None,
-            disc_number: None,
-            year: None,
-            genre: None,
-            duration_ms: None,
-        }
-    }
-}
 
 impl TrackMetadata {
     pub fn from_id3_tag(tag: &id3::Tag) -> Self {

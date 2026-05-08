@@ -1,6 +1,6 @@
 # BangTunes Configuration File
-# Copy this to bangtunes.toml and customize as needed
-# This file shows example settings - actual paths should be customized
+# Copy this to ~/.config/bangtunes.toml (global) or ./bangtunes.toml (project-local).
+# A local file takes precedence when both exist.
 
 # Default audio format for downloads (opus, mp3, m4a)
 format = "opus"
@@ -11,14 +11,25 @@ min_score = 58
 # Default batch size (tracks per batch file)
 size = 50
 
-# Example settings for different use cases:
-# For high-quality archival: format = "m4a", min_score = 70
-# For mobile/storage-conscious: format = "opus", min_score = 50
-# For broad discovery: min_score = 40, size = 60
+# Directories the Rust TUI player scans for audio files.
+# Each entry is an absolute path string.
+music_directories = [
+    "~/Music",
+]
 
-# Player Integration Settings
+# Download behaviour
+[download]
+format = "opus"      # opus | mp3 | m4a
+quality = "best"     # best | medium | low
+speed = "normal"     # normal | fast | stealth  (stealth adds delays to avoid rate-limiting)
+
+# Listening-behaviour tracking (used by smart shuffle weighting)
+[behavior]
+min_play_time_for_tracking = 30   # seconds before a listen is counted
+weight_decay_days = 30            # days until an unplayed track is fully boosted
+
+# Player defaults (Rust TUI)
 [player]
-# Path to player source (auto-detected if not set)
-root = "~/Builds/BangTunes"
-# Configuration directory for player integration
-config_dir = "~/.config/bangtunes"
+volume = 0.7     # 0.0–1.0
+shuffle = false
+repeat = false

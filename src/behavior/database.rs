@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use super::{PlaySession, TrackBehavior};
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -184,6 +187,7 @@ impl BehaviorDatabase {
         Ok(())
     }
     
+    #[allow(clippy::too_many_arguments)]
     pub async fn save_track_metadata(
         &self,
         track_id: Uuid,

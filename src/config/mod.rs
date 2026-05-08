@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 // Configuration management for BangTunes
 // Keeps all the settings in one place so nothing gets lost
 // Handles loading/saving settings, with sensible defaults when config is missing
@@ -12,15 +15,8 @@ use std::path::PathBuf;
 pub struct Config {
     pub music_directories: Vec<PathBuf>,
     pub database_path: PathBuf,
-    pub spotify: SpotifyConfig,
     pub behavior: BehaviorConfig,
     pub ui: UiConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SpotifyConfig {
-    pub client_id: Option<String>,
-    pub redirect_uri: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,10 +44,6 @@ impl Default for Config {
                 dirs::audio_dir().unwrap_or_else(|| PathBuf::from("~/Music")),
             ],
             database_path: config_dir.join("panpipe.db"),
-            spotify: SpotifyConfig {
-                client_id: None,
-                redirect_uri: "http://localhost:8888/callback".to_string(),
-            },
             behavior: BehaviorConfig {
                 skip_threshold_seconds: 30,
                 weight_decay_days: 30,

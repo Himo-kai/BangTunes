@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use anyhow::{Result, anyhow};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
@@ -178,7 +181,7 @@ pub fn enhance_track_metadata(track: &mut Track, db_track: Option<&DatabaseTrack
     }
     
     // If artist is still missing, try to parse from title
-    if track.metadata.artist.is_none() || track.metadata.artist.as_ref().map_or(true, |a| a.trim().is_empty()) {
+    if track.metadata.artist.is_none() || track.metadata.artist.as_ref().is_none_or(|a| a.trim().is_empty()) {
         if let Some(title) = &track.metadata.title {
             let (parsed_artist, parsed_title) = parse_artist_title(title);
             if parsed_artist != "Unknown Artist" {

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 // Behavior tracking - the "smart" part of BangTunes
 // Learns what you like and skip, makes shuffle actually useful
 
@@ -79,10 +82,12 @@ impl TrackBehavior {
     
     fn update_tags(&mut self) {
         self.tags.clear();
-        
-        // Tag based on completion rate
+
+        // Tag based on completion rate.
+        // NOTE: "high_completion" is auto-detected from listening data.
+        //       "favorite" is reserved exclusively for explicit user action (toggle keybinding).
         if self.completion_rate > 90.0 {
-            self.tags.push("favorite".to_string());
+            self.tags.push("high_completion".to_string());
         } else if self.completion_rate < 30.0 {
             self.tags.push("often_skipped".to_string());
         }
@@ -114,10 +119,14 @@ impl TrackBehavior {
     
     pub fn calculate_shuffle_weight(&self, days_since_last_play: Option<u64>) -> f64 {
         let mut weight = 1.0;
-        
-        // Boost favorites
+
+        // Boost user-starred tracks and auto-detected high-completion tracks separately.
+        // "favorite" = explicit user toggle; "high_completion" = auto-tag from listening data.
         if self.tags.contains(&"favorite".to_string()) {
             weight *= 1.5;
+        }
+        if self.tags.contains(&"high_completion".to_string()) {
+            weight *= 1.2;
         }
         
         // Reduce weight for often skipped tracks
@@ -136,6 +145,51 @@ impl TrackBehavior {
         let skip_ratio = self.total_skips as f64 / self.total_plays.max(1) as f64;
         weight *= (1.0 - skip_ratio * 0.5).max(0.1); // Never go below 0.1
         
-        weight.max(0.1).min(5.0) // Clamp between 0.1 and 5.0
+        weight.clamp(0.1, 5.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_session(completion: f64, skipped: bool) -> PlaySession {
+        PlaySession {
+            session_id: Uuid::new_v4(),
+            track_id: Uuid::new_v4(),
+            started_at: chrono::Utc::now(),
+            ended_at: None,
+            play_duration: (completion * 180.0 / 100.0) as u64,
+            track_duration: 180,
+            skip_reason: if skipped { Some(SkipReason::UserSkip) } else { None },
+            completion_percentage: completion,
+        }
+    }
+
+    #[test]
+    fn auto_tag_uses_high_completion_not_favorite() {
+        let mut behavior = TrackBehavior::new(Uuid::new_v4());
+        // Drive completion rate above the 90% threshold
+        behavior.update_from_session(&make_session(95.0, false));
+        assert!(
+            behavior.tags.contains(&"high_completion".to_string()),
+            "expected 'high_completion' tag for >90% completion, got: {:?}",
+            behavior.tags
+        );
+        assert!(
+            !behavior.tags.contains(&"favorite".to_string()),
+            "'favorite' must not be auto-assigned — it is reserved for explicit user action"
+        );
+    }
+
+    #[test]
+    fn often_skipped_tag_applied_below_30_percent() {
+        let mut behavior = TrackBehavior::new(Uuid::new_v4());
+        behavior.update_from_session(&make_session(20.0, true));
+        assert!(
+            behavior.tags.contains(&"often_skipped".to_string()),
+            "expected 'often_skipped' tag for <30% completion, got: {:?}",
+            behavior.tags
+        );
     }
 }

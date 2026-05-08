@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 // Terminal UI - the face of BangTunes
 // Built with ratatui because ncurses is a pain and this actually works
 // Note: Main TUI app is in src/bin/panpipe_interactive.rs
@@ -20,6 +23,7 @@ use ratatui::{
 use std::io;
 
 
+/// Owns the ratatui terminal handle and restores the terminal on drop via `CleanupGuard`.
 pub struct TerminalManager {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     _cleanup_guard: CleanupGuard,

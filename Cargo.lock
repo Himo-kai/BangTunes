@@ -1592,6 +1592,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "metaflac"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdf25a3451319c52a4a56d956475fbbb763bfb8420e2187d802485cb0fd8d965"
+dependencies = [
+ "byteorder",
+ "hex",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1878,6 +1888,7 @@ dependencies = [
  "fuzzy-matcher",
  "id3",
  "libc",
+ "metaflac",
  "mp4ameta",
  "notify-rust",
  "rand 0.8.5",

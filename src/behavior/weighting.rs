@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use super::TrackBehavior;
 use chrono::{DateTime, Utc};
 use rand::prelude::*;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// Computes a shuffle weight for a track from its listening behavior and time-decay rules.
 pub struct WeightCalculator {
     decay_days: u64,
     boost_factor: f64,
@@ -52,10 +56,13 @@ impl WeightCalculator {
             weight *= (1.0 - skip_ratio * 0.6).max(0.2);
         }
         
-        // Tag-based adjustments
+        // Tag-based adjustments.
+        // "favorite"        = explicit user star (toggle keybinding) → strongest boost.
+        // "high_completion" = auto-detected from completion rate > 90% → smaller boost.
         for tag in &behavior.tags {
             match tag.as_str() {
                 "favorite" => weight *= 1.8,
+                "high_completion" => weight *= 1.3,
                 "often_skipped" => weight *= 0.2,
                 "skip_early" => weight *= 0.4,
                 "frequently_played" => {
@@ -69,10 +76,11 @@ impl WeightCalculator {
         }
         
         // Ensure weight stays within reasonable bounds
-        weight.max(0.05).min(5.0)
+        weight.clamp(0.05, 5.0)
     }
 }
 
+/// Weighted random track selector — wraps `WeightCalculator` with an RNG to pick the next track.
 pub struct ShuffleWeighting {
     calculator: WeightCalculator,
     rng: ThreadRng,
@@ -162,7 +170,7 @@ impl ShuffleWeighting {
         playlist
     }
     
-    fn weighted_random_select(&mut self, weighted_tracks: &[(Uuid, f64)]) -> Option<Uuid> {
+    pub fn weighted_random_select(&mut self, weighted_tracks: &[(Uuid, f64)]) -> Option<Uuid> {
         let total_weight: f64 = weighted_tracks.iter().map(|(_, weight)| weight).sum();
         
         if total_weight <= 0.0 {
@@ -194,7 +202,6 @@ impl ShuffleWeighting {
         }
     }
     
-    /// Get tracks sorted by current weight (for debugging/analysis)
     pub fn get_tracks_by_weight(
         &self,
         behaviors: &HashMap<Uuid, TrackBehavior>,
@@ -210,5 +217,133 @@ impl ShuffleWeighting {
         
         weighted_tracks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         weighted_tracks
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::behavior::TrackBehavior;
+    use chrono::Duration as ChronoDuration;
+
+    fn behavior(completion_rate: f64, total_plays: u64, total_skips: u64) -> TrackBehavior {
+        TrackBehavior {
+            track_id: Uuid::new_v4(),
+            total_plays,
+            total_skips,
+            total_play_time: 0,
+            last_played: None,
+            skip_positions: vec![],
+            completion_rate,
+            weight: 1.0,
+            tags: vec![],
+        }
+    }
+
+    #[test]
+    fn high_completion_beats_high_skip_rate() {
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        let loved = behavior(90.0, 10, 0);
+        let skipped = behavior(10.0, 10, 9);
+        assert!(
+            calc.calculate_weight(&loved, now) > calc.calculate_weight(&skipped, now),
+            "high completion rate should outweigh high skip rate"
+        );
+    }
+
+    #[test]
+    fn unplayed_track_outweighs_recently_played_equivalent() {
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        // Neutral completion rate so no completion penalty applies to either
+        let unplayed = behavior(50.0, 0, 0); // never played → 1.3× time boost
+        let mut recent = behavior(50.0, 5, 1);
+        recent.last_played = Some(now - ChronoDuration::hours(1)); // played today → 0.8× penalty
+        assert!(
+            calc.calculate_weight(&unplayed, now) > calc.calculate_weight(&recent, now),
+            "unplayed track (1.3× boost) should outscore recently-played equivalent (0.8× penalty)"
+        );
+    }
+
+    #[test]
+    fn favorite_tag_raises_weight_above_untagged() {
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        let mut fav = behavior(50.0, 5, 1);
+        fav.tags = vec!["favorite".to_string()];
+        let plain = behavior(50.0, 5, 1);
+        assert!(
+            calc.calculate_weight(&fav, now) > calc.calculate_weight(&plain, now),
+            "favorite tag should apply 1.8× boost"
+        );
+    }
+
+    #[test]
+    fn often_skipped_tag_drops_weight_below_untagged() {
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        let mut penalised = behavior(50.0, 5, 1);
+        penalised.tags = vec!["often_skipped".to_string()];
+        let plain = behavior(50.0, 5, 1);
+        assert!(
+            calc.calculate_weight(&penalised, now) < calc.calculate_weight(&plain, now),
+            "often_skipped tag should apply 0.2× penalty"
+        );
+    }
+
+    #[test]
+    fn stale_track_is_boosted_by_time_decay() {
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        let mut stale = behavior(50.0, 5, 1);
+        stale.last_played = Some(now - ChronoDuration::days(30)); // 30 days ago, > decay_days
+        let recent = behavior(50.0, 5, 1);
+        assert!(
+            calc.calculate_weight(&stale, now) > calc.calculate_weight(&recent, now),
+            "track not played in >decay_days should be boosted"
+        );
+    }
+
+    #[test]
+    fn weight_is_clamped_between_0_05_and_5() {
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        // worst possible track: max skip rate + often_skipped tag
+        let mut worst = behavior(0.0, 100, 100);
+        worst.tags = vec!["often_skipped".to_string(), "high_skip_rate".to_string()];
+        let w = calc.calculate_weight(&worst, now);
+        assert!(w >= 0.05, "weight must not drop below 0.05 (got {w})");
+        assert!(w <= 5.0, "weight must not exceed 5.0 (got {w})");
+    }
+
+    #[test]
+    fn high_completion_tag_boosts_weight_above_untagged() {
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        let mut auto_tagged = behavior(50.0, 5, 1);
+        auto_tagged.tags = vec!["high_completion".to_string()];
+        let plain = behavior(50.0, 5, 1);
+        assert!(
+            calc.calculate_weight(&auto_tagged, now) > calc.calculate_weight(&plain, now),
+            "high_completion tag should apply 1.3× boost"
+        );
+    }
+
+    #[test]
+    fn favorite_tag_not_auto_assigned_by_completion_rate() {
+        // "favorite" must only come from explicit user action; WeightCalculator must
+        // treat it as a separate signal from "high_completion".
+        let calc = WeightCalculator::new(7);
+        let now = Utc::now();
+        let mut fav = behavior(50.0, 5, 1);
+        fav.tags = vec!["favorite".to_string()];
+        let mut auto = behavior(50.0, 5, 1);
+        auto.tags = vec!["high_completion".to_string()];
+        // User favorite (1.8×) must outweigh auto high_completion (1.3×)
+        assert!(
+            calc.calculate_weight(&fav, now) > calc.calculate_weight(&auto, now),
+            "explicit favorite (1.8×) should score higher than auto high_completion (1.3×)"
+        );
     }
 }

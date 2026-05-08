@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 // ============================================================================
 // Full AudioPlayer implementation with rodio (Linux/macOS/Windows)
 // ============================================================================
@@ -159,40 +162,63 @@ impl AudioPlayer {
             let state_clone = Arc::clone(&self.state);
             let sender_clone = sender.clone();
             let track_clone = track.clone();
-            
+            let track_id = track.id;
+            let playback_start_clone = Arc::clone(&self.playback_start_time);
+            let learning_track_clone = Arc::clone(&self.track_for_learning);
+
             tokio::spawn(async move {
                 // Give the track time to start buffering (prevents spurious empty() at startup)
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                
+
                 loop {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                    
+
                     // Check if sink is empty (track might be finished)
-                    let is_empty = sink_clone.lock().unwrap()
-                        .as_ref()
-                        .map(|s| s.empty())
-                        .unwrap_or(true);
-                    
+                    let is_empty = match sink_clone.lock() {
+                        Ok(guard) => guard.as_ref().map(|s| s.empty()).unwrap_or(true),
+                        Err(_) => break, // mutex poisoned — stop monitoring
+                    };
+
                     if is_empty {
                         // Wait 1 second to confirm this isn't a spurious empty() during buffering
                         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                        
+
                         // Check again
-                        let still_empty = sink_clone.lock().unwrap()
-                            .as_ref()
-                            .map(|s| s.empty())
-                            .unwrap_or(true);
-                        
+                        let still_empty = match sink_clone.lock() {
+                            Ok(guard) => guard.as_ref().map(|s| s.empty()).unwrap_or(true),
+                            Err(_) => break,
+                        };
+
                         if still_empty {
+                            // Emit DurationLearned if this track had no embedded duration tag.
+                            // Only emit if the learning track matches this task's track (guards
+                            // against a new track starting before this task detects completion).
+                            if let (Ok(mut start_lock), Ok(mut learning_lock)) = (
+                                playback_start_clone.lock(),
+                                learning_track_clone.lock(),
+                            ) {
+                                if let (Some(start_time), Some(learning_track)) =
+                                    (start_lock.take(), learning_lock.take())
+                                {
+                                    if learning_track.id == track_id {
+                                        let _ = sender_clone.send(PlayerEvent::DurationLearned(
+                                            learning_track,
+                                            start_time.elapsed(),
+                                        ));
+                                    }
+                                }
+                            }
+
                             // Confirmed: track actually finished
                             let _ = sender_clone.send(PlayerEvent::TrackFinished(track_clone));
                             break;
                         }
                     }
-                    
+
                     // Stop monitoring if playback was stopped manually
-                    if *state_clone.lock().unwrap() == PlaybackState::Stopped {
-                        break;
+                    match state_clone.lock() {
+                        Ok(guard) => if *guard == PlaybackState::Stopped { break; }
+                        Err(_) => break,
                     }
                 }
             });

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use super::{AudioFormat, Track, TrackMetadata};
 use crate::database::{BangTunesDatabase, enhance_track_metadata};
 use anyhow::Result;
@@ -16,7 +19,7 @@ pub struct MusicScanner {
 pub enum ScanProgress {
     Started { total_directories: usize },
     DirectoryStarted { path: PathBuf },
-    TrackFound { track: Track, progress: usize, total: Option<usize> },
+    TrackFound { track: Box<Track>, progress: usize, total: Option<usize> },
     DirectoryCompleted { path: PathBuf, tracks_found: usize },
     Completed { total_tracks: usize },
     Error { path: PathBuf, error: String },
@@ -83,7 +86,7 @@ impl MusicScanner {
                 // Skip hidden files (dotfiles)
                 if path.file_name()
                     .and_then(|n| n.to_str())
-                    .map_or(false, |n| n.starts_with('.')) {
+                    .is_some_and(|n| n.starts_with('.')) {
                     continue;
                 }
                 
@@ -190,7 +193,7 @@ impl MusicScanner {
                     // Skip hidden files (dotfiles)
                     if entry_path.file_name()
                         .and_then(|n| n.to_str())
-                        .map_or(false, |n| n.starts_with('.')) {
+                        .is_some_and(|n| n.starts_with('.')) {
                         continue;
                     }
                     
@@ -209,7 +212,7 @@ impl MusicScanner {
                                 
                                 // Send track found progress
                                 let _ = progress_tx.send(ScanProgress::TrackFound {
-                                    track: track.clone(),
+                                    track: Box::new(track.clone()),
                                     progress: progress_count,
                                     total: None, // We don't know total until complete
                                 }).await;
@@ -351,10 +354,36 @@ impl MusicScanner {
         })
     }
 
-    fn extract_flac_metadata(&self, _path: &Path) -> Result<TrackMetadata> {
-        // For now, return empty metadata for FLAC
-        // TODO: Implement FLAC metadata extraction
-        Ok(TrackMetadata::default())
+    fn extract_flac_metadata(&self, path: &Path) -> Result<TrackMetadata> {
+        let tag = metaflac::Tag::read_from_path(path)?;
+        let vc = tag.vorbis_comments().ok_or_else(|| anyhow::anyhow!("No Vorbis comment block"))?;
+
+        let get = |key: &str| -> Option<String> {
+            vc.get(key).and_then(|vals| vals.first()).cloned()
+        };
+
+        let duration_ms = tag.get_blocks(metaflac::BlockType::StreamInfo)
+            .filter_map(|b| if let metaflac::Block::StreamInfo(info) = b { Some(info) } else { None })
+            .next()
+            .and_then(|info| {
+                if info.sample_rate > 0 && info.total_samples > 0 {
+                    Some(info.total_samples * 1000 / info.sample_rate as u64)
+                } else {
+                    None
+                }
+            });
+
+        Ok(TrackMetadata {
+            title: get("TITLE"),
+            artist: get("ARTIST"),
+            album: get("ALBUM"),
+            album_artist: get("ALBUMARTIST"),
+            track_number: get("TRACKNUMBER").and_then(|s| s.parse().ok()),
+            disc_number: get("DISCNUMBER").and_then(|s| s.parse().ok()),
+            year: get("DATE").and_then(|s| s[..4.min(s.len())].parse().ok()),
+            genre: get("GENRE"),
+            duration_ms,
+        })
     }
 
     /// Feature-gated duration probing using symphonia codec

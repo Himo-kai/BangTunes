@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use regex::Regex;
 
 #[derive(Debug, Clone)]
@@ -74,7 +77,8 @@ impl MetadataParser {
         
         // Pattern 2: "Number - Artist - Title.ext"
         // Example: "21 - blink-182 - TAKE ME IN (Official Lyric Video).m4a"
-        if let Ok(regex) = Regex::new(r"^\d+\s*-\s*(.+?)\s*-\s*(.+?)(?:\s*\(.*?\))?\.") {
+        // \s+-\s+ (spaces required) avoids splitting on bare hyphens inside artist names like "blink-182"
+        if let Ok(regex) = Regex::new(r"^\d+\s*-\s*(.+?)\s+-\s+(.+?)(?:\s*\(.*?\))?\.") {
             patterns.push(ParsePattern {
                 name: "Number - Artist - Title".to_string(),
                 regex,
@@ -200,6 +204,12 @@ impl MetadataParser {
                 if left_clean.len() < 2 || right_clean.len() < 2 {
                     continue;
                 }
+
+                // Skip if left is purely numeric — it's a track number, not artist/title.
+                // Let the regex patterns handle "NN - Artist - Title" formats instead.
+                if left_clean.chars().all(|c| c.is_ascii_digit()) {
+                    continue;
+                }
                 
                 // Determine which is artist vs title based on common patterns
                 let (title, artist, confidence) = self.determine_artist_title_order(&left_clean, &right_clean, info.confidence);
@@ -216,7 +226,7 @@ impl MetadataParser {
         let mut confidence = base_confidence;
         
         // Heuristic 1: Numbers at start usually indicate track number, so format is likely "Number - Artist - Title"
-        if left.chars().next().map_or(false, |c| c.is_numeric()) {
+        if left.chars().next().is_some_and(|c| c.is_numeric()) {
             // If left starts with number, it's probably track number, so right is likely artist
             confidence *= 0.9; // Slightly lower confidence due to ambiguity
             return (right.to_string(), left.to_string(), confidence);
@@ -339,9 +349,11 @@ impl MetadataParser {
         let regex_count = results.iter()
             .filter(|r| r.normalization_applied.contains(&"regex_patterns".to_string()))
             .count();
-        let avg_confidence = results.iter()
-            .map(|r| r.confidence)
-            .sum::<f32>() / results.len() as f32;
+        let avg_confidence = if results.is_empty() {
+            0.0
+        } else {
+            results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32
+        };
             
         (cheap_delimiter_count, regex_count, avg_confidence)
     }

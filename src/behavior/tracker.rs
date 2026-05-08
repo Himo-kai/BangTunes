@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use super::{BehaviorDatabase, PlaySession, TrackBehavior};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -231,6 +234,6 @@ impl BehaviorTracker {
     /// Check if a track is currently favorited.
     pub async fn is_favorite(&self, track_id: Uuid) -> Result<bool> {
         let behavior = self.database.get_track_behavior(track_id).await?;
-        Ok(behavior.map_or(false, |b| b.tags.contains(&"favorite".to_string())))
+        Ok(behavior.is_some_and(|b| b.tags.contains(&"favorite".to_string())))
     }
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 // PanPipe Library - Core modules for terminal music player
 // Modular design makes it easy to swap out components
 

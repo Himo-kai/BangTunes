@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2024 BangTunes Contributors
+
 """
 Environment and platform detection for BangTunes.
 

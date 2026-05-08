@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2024 BangTunes Contributors
+
 """
 Python-based music player for when Rust compilation fails (especially on Termux).
 Provides a simple but functional TUI for music playback.

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2024 BangTunes Contributors
+
 """
 Command-line interface for BangTunes.
 
@@ -28,20 +31,6 @@ from bangtunes.constants import (
 from bangtunes.env import get_root
 from bangtunes.config import load_config
 from bangtunes.db import db_init
-
-# Try to import player integration
-try:
-    from bangtunes.player_integration import create_integration, BangTunesPlayer
-    from typing import Callable, Optional
-    from pathlib import Path
-
-    create_integration_func: Optional[
-        Callable[[Path, Optional[dict]], BangTunesPlayer]
-    ] = create_integration
-    PLAYER_AVAILABLE = True
-except ImportError:
-    create_integration_func = None
-    PLAYER_AVAILABLE = False
 
 # Import CLI command implementations
 from . import commands

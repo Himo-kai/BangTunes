@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -103,7 +106,7 @@ impl Playlist {
         let total: u64 = valid_tracks
             .iter()
             .filter_map(|&idx| all_tracks.get(idx))
-            .filter_map(|track| track.duration.map(|d| d.as_millis() as u64))
+            .filter_map(|track| track.duration.map(|d| d.as_secs()))
             .sum();
         
         if total > 0 {
@@ -346,4 +349,43 @@ impl PlaylistManager {
 pub struct PlaylistStats {
     pub track_count: usize,
     pub total_duration: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Playlist;
+    use crate::audio::Track;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    fn track_with_duration(path: &str, secs: u64) -> Track {
+        let mut t = Track::new(PathBuf::from(path));
+        t.duration = Some(Duration::from_secs(secs));
+        t
+    }
+
+    #[test]
+    fn calculate_duration_returns_seconds_not_milliseconds() {
+        let track = track_with_duration("/music/song.mp3", 180);
+        let mut playlist = Playlist::new("test".to_string(), None);
+        playlist.add_track(PathBuf::from("/music/song.mp3"));
+        // With .as_millis() this would be Some(180_000); correct answer is Some(180)
+        assert_eq!(playlist.calculate_duration(&[track]), Some(180));
+    }
+
+    #[test]
+    fn duration_string_formats_mm_ss_correctly() {
+        let track = track_with_duration("/music/song.mp3", 185); // 3:05
+        let mut playlist = Playlist::new("test".to_string(), None);
+        playlist.add_track(PathBuf::from("/music/song.mp3"));
+        assert_eq!(playlist.duration_string(&[track]), "3:05");
+    }
+
+    #[test]
+    fn duration_string_formats_hh_mm_ss_correctly() {
+        let track = track_with_duration("/music/song.mp3", 3725); // 1:02:05
+        let mut playlist = Playlist::new("test".to_string(), None);
+        playlist.add_track(PathBuf::from("/music/song.mp3"));
+        assert_eq!(playlist.duration_string(&[track]), "1:02:05");
+    }
 }

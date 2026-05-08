@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use anyhow::Result;
 use tracing::{debug, info, error};
 use clap::Parser;
@@ -54,14 +57,14 @@ struct Args {
     play_track: Option<PathBuf>,
 }
 
-fn init_logging(dev: bool) -> Result<()> {
+fn init_logging(dev: bool) -> Result<tracing_appender::non_blocking::WorkerGuard> {
     // Create logs directory in project root
     let log_dir = PathBuf::from("logs");
     std::fs::create_dir_all(&log_dir)?;
 
     // Daily rotating file appender
     let file_appender = tracing_appender::rolling::daily(&log_dir, "panpipe.log");
-    let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
 
     // Base filter: info level for general logs, debug for panpipe
     let base_filter = EnvFilter::try_from_default_env()
@@ -78,15 +81,12 @@ fn init_logging(dev: bool) -> Result<()> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    // If dev mode, also log to stderr (this will be in addition to file)
     if dev {
         eprintln!("🔧 Dev mode: Debug output enabled to stderr + file");
     }
-    
-    // Prevent the guard from being dropped
-    std::mem::forget(_guard);
-    
-    Ok(())
+
+    // Return guard so it is dropped at the end of main, flushing buffered log lines
+    Ok(guard)
 }
 
 /// Force terminal restoration - called on panic and normal exit
@@ -115,8 +115,8 @@ async fn main() -> Result<()> {
     // Parse CLI arguments
     let args = Args::parse();
     
-    // Initialize logging system
-    init_logging(args.dev)?;
+    // Initialize logging system. Guard must live until end of main to flush buffered log lines.
+    let _log_guard = init_logging(args.dev)?;
     
     info!("🎵 PanPipe Interactive starting up");
     
@@ -170,7 +170,7 @@ async fn main() -> Result<()> {
                 println!("📂 Scanning: {:?}", path);
             }
             ScanProgress::TrackFound { track, progress, .. } => {
-                all_tracks.push(track);
+                all_tracks.push(*track);
                 
                 // Update progress every 50 tracks for smooth feedback
                 if progress % 50 == 0 {
@@ -481,9 +481,8 @@ impl InteractiveApp {
         while !self.should_quit {
             // Handle input events with balanced polling for responsive UI
             if event::poll(Duration::from_millis(50)).unwrap_or(false) {
-                if let Ok(event) = event::read() {
-                    if let Event::Key(key) = event {
-                        if key.kind == KeyEventKind::Press {
+                if let Ok(Event::Key(key)) = event::read() {
+                    if key.kind == KeyEventKind::Press {
                             let app_event = if self.queue_replace_confirmation {
                                 // Queue replacement confirmation takes priority
                                 match key.code {
@@ -509,7 +508,6 @@ impl InteractiveApp {
                                 self.handle_event(app_event).await?;
                             }
                         }
-                    }
                 }
             }
             
@@ -914,43 +912,41 @@ impl InteractiveApp {
             }
             InteractiveEvent::TogglePlayPause => {
                 if self.is_playing {
-                    self.audio_player.pause()?;
+                    tokio::task::block_in_place(|| self.audio_player.pause())?;
                     self.is_playing = false;
                     self.set_status("⏸️ Paused");
+                } else if self.current_track_index.is_some() {
+                    tokio::task::block_in_place(|| self.audio_player.resume())?;
+                    self.is_playing = true;
+                    self.set_status("▶️ Resumed");
                 } else {
-                    if self.current_track_index.is_some() {
-                        self.audio_player.resume()?;
-                        self.is_playing = true;
-                        self.set_status("▶️ Resumed");
-                    } else {
-                        // Check if we're in playlist context first
-                        if let Some((playlist_id, track_idx_in_playlist)) = self.get_playlist_selection_context() {
-                            // Playing from playlist - get the actual track index
-                            debug!("🎵 TogglePlayPause: Playlist context detected: playlist={}, track_idx={}", playlist_id, track_idx_in_playlist);
-                            if let Some(playlist) = self.playlist_manager.get_playlist(&playlist_id) {
-                                let valid_tracks = playlist.get_valid_tracks(&self.tracks);
-                                debug!("🎵 TogglePlayPause: Valid tracks in playlist: {:?}", valid_tracks);
-                                if let Some(&actual_track_idx) = valid_tracks.get(track_idx_in_playlist) {
-                                    debug!("🎵 TogglePlayPause: Playing track {} from playlist", actual_track_idx);
-                                    self.play_track(actual_track_idx).await?;
-                                } else {
-                                    debug!("❌ TogglePlayPause: Track index {} not found in valid tracks", track_idx_in_playlist);
-                                }
+                    // Check if we're in playlist context first
+                    if let Some((playlist_id, track_idx_in_playlist)) = self.get_playlist_selection_context() {
+                        // Playing from playlist - get the actual track index
+                        debug!("🎵 TogglePlayPause: Playlist context detected: playlist={}, track_idx={}", playlist_id, track_idx_in_playlist);
+                        if let Some(playlist) = self.playlist_manager.get_playlist(&playlist_id) {
+                            let valid_tracks = playlist.get_valid_tracks(&self.tracks);
+                            debug!("🎵 TogglePlayPause: Valid tracks in playlist: {:?}", valid_tracks);
+                            if let Some(&actual_track_idx) = valid_tracks.get(track_idx_in_playlist) {
+                                debug!("🎵 TogglePlayPause: Playing track {} from playlist", actual_track_idx);
+                                self.play_track(actual_track_idx).await?;
                             } else {
-                                debug!("❌ TogglePlayPause: Playlist {} not found", playlist_id);
+                                debug!("❌ TogglePlayPause: Track index {} not found in valid tracks", track_idx_in_playlist);
                             }
                         } else {
-                            debug!("🎵 TogglePlayPause: No playlist context, checking library selection");
-                            if let Some(selected) = self.list_state.selected() {
-                                // Playing from library
-                                if selected < self.filtered_tracks.len() {
-                                    let track_idx = self.filtered_tracks[selected];
-                                    debug!("🎵 TogglePlayPause: Playing track {} from library", track_idx);
-                                    self.play_track(track_idx).await?;
-                                }
-                            } else {
-                                debug!("❌ TogglePlayPause: No selection found in library");
+                            debug!("❌ TogglePlayPause: Playlist {} not found", playlist_id);
+                        }
+                    } else {
+                        debug!("🎵 TogglePlayPause: No playlist context, checking library selection");
+                        if let Some(selected) = self.list_state.selected() {
+                            // Playing from library
+                            if selected < self.filtered_tracks.len() {
+                                let track_idx = self.filtered_tracks[selected];
+                                debug!("🎵 TogglePlayPause: Playing track {} from library", track_idx);
+                                self.play_track(track_idx).await?;
                             }
+                        } else {
+                            debug!("❌ TogglePlayPause: No selection found in library");
                         }
                     }
                 }
@@ -1576,7 +1572,7 @@ impl InteractiveApp {
         {
             self.set_status(&format!("🔄 Attempting to play: {}", track.display_title()));
             
-            match self.audio_player.play_track(track.clone()) {
+            match tokio::task::block_in_place(|| self.audio_player.play_track(track.clone())) {
                 Ok(()) => {
                     self.current_track_index = Some(track_idx);
                     self.is_playing = true;
@@ -1688,7 +1684,7 @@ impl InteractiveApp {
                 let track = &self.tracks[current_idx];
                 let _ = self.behavior_tracker.handle_event(PlaybackEvent::TrackSkipped {
                     track_id: track.id,
-                    position: self.current_position.as_secs() as u64,
+                    position: self.current_position.as_secs(),
                     reason: SkipReason::NextTrack,
                     timestamp: chrono::Utc::now(),
                 }).await;
@@ -1895,20 +1891,16 @@ impl InteractiveApp {
                 // Get current track state for this playlist
                 if let Some(track_state) = self.playlist_track_states.get_mut(&expanded_playlist_id) {
                     let current_track_idx = track_state.selected().unwrap_or(0);
-                    let prev_track_idx = if current_track_idx == 0 {
-                        valid_tracks.len() - 1
-                    } else {
-                        current_track_idx - 1
-                    };
-                    
-                    // Update playlist track selection
-                    track_state.select(Some(prev_track_idx));
-                    
-                    if let Some(&actual_track_idx) = valid_tracks.get(prev_track_idx) {
-                        debug!("🎵 Playing previous track {} from playlist (track {} of {})", actual_track_idx, prev_track_idx + 1, valid_tracks.len());
-                        self.play_track(actual_track_idx).await?;
-                    } else {
-                        debug!("❌ Previous track index {} not found in playlist", prev_track_idx);
+                    if let Some(prev_track_idx) = compute_prev_idx(&valid_tracks, current_track_idx) {
+                        // Update playlist track selection
+                        track_state.select(Some(prev_track_idx));
+
+                        if let Some(&actual_track_idx) = valid_tracks.get(prev_track_idx) {
+                            debug!("🎵 Playing previous track {} from playlist (track {} of {})", actual_track_idx, prev_track_idx + 1, valid_tracks.len());
+                            self.play_track(actual_track_idx).await?;
+                        } else {
+                            debug!("❌ Previous track index {} not found in playlist", prev_track_idx);
+                        }
                     }
                 } else {
                     debug!("❌ No track state found for expanded playlist");
@@ -1918,15 +1910,11 @@ impl InteractiveApp {
             // Previous track in library
             debug!("🎵 Previous track in library context");
             if let Some(selected) = self.list_state.selected() {
-                let prev_idx = if selected == 0 {
-                    self.filtered_tracks.len() - 1
-                } else {
-                    selected - 1
-                };
-                self.list_state.select(Some(prev_idx));
-                
-                let track_idx = self.filtered_tracks[prev_idx];
-                self.play_track(track_idx).await?;
+                if let Some(prev_idx) = compute_prev_idx(&self.filtered_tracks, selected) {
+                    self.list_state.select(Some(prev_idx));
+                    let track_idx = self.filtered_tracks[prev_idx];
+                    self.play_track(track_idx).await?;
+                }
             }
         }
         
@@ -2046,12 +2034,10 @@ impl InteractiveApp {
             let current = self.playlist_selector_state.selected().unwrap_or(0);
             let new_index = if delta > 0 {
                 (current + delta as usize) % total_options
+            } else if current == 0 {
+                total_options - 1
             } else {
-                if current == 0 {
-                    total_options - 1
-                } else {
-                    current.saturating_sub((-delta) as usize)
-                }
+                current.saturating_sub((-delta) as usize)
             };
             
             self.playlist_selector_state.select(Some(new_index));
@@ -2068,12 +2054,10 @@ impl InteractiveApp {
                 let current = self.list_state.selected().unwrap_or(0);
                 let new_index = if delta > 0 {
                     (current + delta as usize) % self.filtered_tracks.len()
+                } else if current == 0 {
+                    self.filtered_tracks.len() - 1
                 } else {
-                    if current == 0 {
-                        self.filtered_tracks.len() - 1
-                    } else {
-                        current.saturating_sub((-delta) as usize)
-                    }
+                    current.saturating_sub((-delta) as usize)
                 };
                 
                 self.list_state.select(Some(new_index));
@@ -2086,12 +2070,10 @@ impl InteractiveApp {
                 let current = self.metadata_list_state.selected().unwrap_or(0);
                 let new_index = if delta > 0 {
                     (current + delta as usize) % self.tracks.len()
+                } else if current == 0 {
+                    self.tracks.len() - 1
                 } else {
-                    if current == 0 {
-                        self.tracks.len() - 1
-                    } else {
-                        current.saturating_sub((-delta) as usize)
-                    }
+                    current.saturating_sub((-delta) as usize)
                 };
                 
                 self.metadata_list_state.select(Some(new_index));
@@ -2120,12 +2102,10 @@ impl InteractiveApp {
                 let current = self.playlist_list_state.selected().unwrap_or(0);
                 let new_index = if delta > 0 {
                     (current + delta as usize) % total_items
+                } else if current == 0 {
+                    total_items - 1
                 } else {
-                    if current == 0 {
-                        total_items - 1
-                    } else {
-                        current.saturating_sub((-delta) as usize)
-                    }
+                    current.saturating_sub((-delta) as usize)
                 };
                 
                 self.playlist_list_state.select(Some(new_index));
@@ -2362,7 +2342,7 @@ impl InteractiveApp {
         let queue_visible = self.queue_visible;
         let queue = &self.queue;
         let tracks = &self.tracks;
-        let mut queue_list_state = &mut self.queue_list_state;
+        let queue_list_state = &mut self.queue_list_state;
         
         // Attempt render with error recovery
         match self.terminal.draw(|f| {
@@ -2440,7 +2420,7 @@ impl InteractiveApp {
             
             // Render queue overlay if visible
             if queue_visible {
-                Self::render_queue_overlay(f, &queue, &tracks, &mut queue_list_state, queue_visible);
+                Self::render_queue_overlay(f, queue, tracks, queue_list_state, queue_visible);
             }
         }) {
             Ok(_) => Ok(()),
@@ -2481,6 +2461,7 @@ impl InteractiveApp {
         f.render_widget(header, area);
     }
     
+    #[allow(clippy::too_many_arguments)]
     fn render_metadata_editor(
         f: &mut Frame,
         area: Rect,
@@ -2620,6 +2601,7 @@ impl InteractiveApp {
     
     // All visualizer rendering methods removed for performance optimization
     
+    #[allow(clippy::too_many_arguments)]
     fn render_track_list(
         f: &mut Frame,
         area: Rect,
@@ -2632,8 +2614,7 @@ impl InteractiveApp {
     ) {
         let items: Vec<ListItem> = filtered_tracks
             .iter()
-            .enumerate()
-            .map(|(_i, &track_idx)| {
+            .map(|&track_idx| {
                 let track = &tracks[track_idx];
                 let is_current = current_track_index == Some(track_idx);
                 
@@ -2680,9 +2661,10 @@ impl InteractiveApp {
     
     // All remaining visualizer rendering methods removed for performance optimization
     
+    #[allow(clippy::too_many_arguments)]
     fn render_player_controls(
-        f: &mut Frame, 
-        area: Rect, 
+        f: &mut Frame,
+        area: Rect,
         tracks: &[panpipe::Track], 
         current_track_index: Option<usize>, 
         is_playing: bool, 
@@ -2800,14 +2782,14 @@ impl InteractiveApp {
             Line::from(vec![Span::styled("⚙️ Settings & Help", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
             Line::from(""),
             Line::from(vec![Span::styled("📑 Tabs:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-            Line::from("  1 / Tab       Library (browse all tracks)"),
+            Line::from("  1             Library (browse all tracks)"),
             Line::from("  2             Playlists (create, manage, expand)"),
             Line::from("  3             Metadata Editor (fix track info)"),
             Line::from("  4             Settings (this page)"),
             Line::from(""),
             Line::from(vec![Span::styled("⌨️ Playback Controls:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
             Line::from("  Space         Toggle play/pause"),
-            Line::from("  p             Play selected track"),
+            Line::from("  p             Previous track"),
             Line::from("  n / →         Next track"),
             Line::from("  b / ←         Previous track"),
             Line::from("  + / =         Volume up"),
@@ -2845,7 +2827,8 @@ impl InteractiveApp {
             Line::from(""),
             Line::from(vec![Span::styled("💡 Tips:", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))]),
             Line::from("  • Press ? for context-sensitive help overlay"),
-            Line::from("  • Favorites boost shuffle weight by 1.8x"),
+            Line::from("  • Favorites (f key) boost shuffle weight by 1.8x"),
+            Line::from("  • Tracks played >90% auto-tagged 'high_completion' (+1.3x)"),
             Line::from("  • Smart shuffle avoids recently played tracks"),
             Line::from("  • Press q or Esc to quit"),
         ];
@@ -2944,6 +2927,7 @@ impl InteractiveApp {
         f.render_widget(playlist_input, popup_area);
     }
     
+    #[allow(clippy::too_many_arguments)]
     fn render_playlists_tree_view(
         f: &mut Frame,
         area: Rect,
@@ -2960,7 +2944,7 @@ impl InteractiveApp {
         // Build tree-view items: playlists + their expanded tracks
         let mut tree_items: Vec<ListItem> = Vec::new();
         
-        for (_playlist_idx, playlist) in playlists.iter().enumerate() {
+        for playlist in playlists.iter() {
             let stats = playlist_manager.get_playlist_stats(&playlist.id, tracks).unwrap_or_default();
             let is_expanded = expanded_playlists.contains(&playlist.id);
             
@@ -2971,7 +2955,7 @@ impl InteractiveApp {
                 expand_icon,
                 playlist.name,
                 stats.track_count,
-                Self::format_duration(std::time::Duration::from_millis(stats.total_duration))
+                Self::format_duration(std::time::Duration::from_secs(stats.total_duration))
             );
             
             let playlist_style = Style::default()
@@ -3143,18 +3127,18 @@ impl InteractiveApp {
             Line::from("  f             Toggle favorite (⭐ boosts shuffle weight)"),
             Line::from(""),
             Line::from(vec![Span::styled("Playlists:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-            Line::from("  c             Create playlist"),
+            Line::from("  N             Create playlist"),
             Line::from("  Del           Delete playlist"),
-            Line::from("  l/Enter       Load playlist"),
+            Line::from("  l             Load playlist  (Enter = Expand/collapse)"),
             Line::from("  a             Add track to playlist (from Library)"),
             Line::from("  Q             Load playlist into queue"),
             Line::from(""),
             Line::from(vec![Span::styled("Metadata Editor:", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))]),
-            Line::from("  Enter         Edit selected track"),
-            Line::from("  Ctrl+S        Save changes"),
+            Line::from("  t / a         Edit title / artist"),
+            Line::from("  Tab           Apply suggestion"),
+            Line::from("  b             Bulk apply all suggestions"),
+            Line::from("  Shift+S       Save all changes"),
             Line::from("  Esc           Cancel edit"),
-            Line::from("  Ctrl+R        Reset to original"),
-            Line::from("  Ctrl+A        Apply suggestions"),
             Line::from(""),
             Line::from(vec![Span::styled("Press ? again to close", Style::default().fg(Color::Yellow))]),
         ];
@@ -3313,76 +3297,12 @@ impl InteractiveApp {
                 self.set_status("▶️ Resumed");
             }
             PlayerEvent::TrackStopped => {
-                // Implement autoplay logic with false positive protection
-                // Only autoplay if we're currently playing and have been for a reasonable duration
-                if self.is_playing && self.current_track_index.is_some() {
-                    let elapsed = self.last_position_update.elapsed();
-                    
-                    // Only autoplay if track has been playing for more than 2 seconds
-                    // This prevents false positives from sink.empty() immediately after start
-                    if elapsed.as_secs() >= 2 {
-                        debug!("🎵 Track completed after {}s, triggering autoplay", elapsed.as_secs());
-                        
-                        // Record track completion
-                        if let Some(current_idx) = self.current_track_index {
-                            let track = &self.tracks[current_idx];
-                            let _ = self.behavior_tracker.handle_event(PlaybackEvent::TrackCompleted {
-                                track_id: track.id,
-                                timestamp: chrono::Utc::now(),
-                            }).await;
-                        }
-                        
-                        // Queue takes priority even over RepeatOne — a manually queued
-                        // track is an explicit user intent and should not be blocked by repeat.
-                        if !self.queue.is_empty() {
-                            debug!("TrackStopped - queue has items, advancing (RepeatOne deferred)");
-                            let _ = self.next_track().await;
-                            return Ok(());
-                        }
-
-                        // RepeatOne: replay current track (only when queue is empty)
-                        if self.repeat_mode == RepeatMode::One {
-                            if let Some(idx) = self.current_track_index {
-                                debug!("RepeatOne: Replaying track at index {}", idx);
-                                let _ = self.play_track(idx).await;
-                            }
-                            return Ok(());
-                        }
-
-                        // Autoplay next track with strict playlist isolation
-                        if self.current_tab == AppTab::Playlists && !self.expanded_playlists.is_empty() {
-                            // Autoplay within the expanded playlist only
-                            match self.next_track().await {
-                                Ok(()) => {
-                                    debug!("🎵 Autoplay: Successfully started next track in playlist");
-                                }
-                                Err(e) => {
-                                    debug!("❌ Autoplay failed in playlist: {}", e);
-                                    self.is_playing = false;
-                                    self.current_track_index = None;
-                                    self.set_status("⏹️ Playback stopped - end of playlist");
-                                }
-                            }
-                        } else {
-                            // Autoplay in library context
-                            match self.next_track().await {
-                                Ok(()) => {
-                                    debug!("🎵 Autoplay: Successfully started next track in library");
-                                }
-                                Err(e) => {
-                                    debug!("❌ Autoplay failed in library: {}", e);
-                                    self.is_playing = false;
-                                    self.current_track_index = None;
-                                    self.set_status("⏹️ Playback stopped - end of library");
-                                }
-                            }
-                        }
-                    } else {
-                        debug!("🔍 Ignoring premature TrackStopped event ({}ms elapsed)", elapsed.as_millis());
-                    }
-                } else {
-                    debug!("🔍 Ignoring TrackStopped - not currently playing");
-                }
+                // TrackStopped = user-initiated stop (pressing 's', seeking, or calling
+                // audio_player.stop() directly).  It must never trigger autoplay or track
+                // advancement — that is exclusively the job of TrackFinished, which fires
+                // only when the audio sink naturally empties after a track plays to its end.
+                self.is_playing = false;
+                debug!("⏹️ TrackStopped: halted playback, no autoplay");
             }
             PlayerEvent::VolumeChanged(volume) => {
                 self.volume = volume;
@@ -3523,7 +3443,7 @@ fn redirect_stderr_to_null() -> Result<()> {
     unsafe {
         // Open /dev/null for writing
         let null_fd = libc::open(
-            b"/dev/null\0".as_ptr() as *const libc::c_char,
+            c"/dev/null".as_ptr(),
             libc::O_WRONLY,
         );
         
@@ -3546,7 +3466,45 @@ fn redirect_stderr_to_null() -> Result<()> {
         }
         
         libc::close(null_fd);
+        // stderr_backup is no longer needed once dup2 redirected stderr;
+        // close it to avoid leaking the fd for the life of the process.
+        libc::close(stderr_backup);
     }
-    
+
     Ok(())
+}
+
+/// Returns the previous index relative to `selected`, wrapping 0 → last.
+/// Returns `None` when `items` is empty, preventing underflow.
+fn compute_prev_idx(items: &[usize], selected: usize) -> Option<usize> {
+    if items.is_empty() {
+        return None;
+    }
+    Some(if selected == 0 {
+        items.len() - 1
+    } else {
+        selected - 1
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_prev_idx;
+
+    #[test]
+    fn prev_idx_returns_none_when_filtered_tracks_empty() {
+        assert!(compute_prev_idx(&[], 0).is_none());
+    }
+
+    #[test]
+    fn prev_idx_wraps_to_last_when_at_first() {
+        let tracks = [10usize, 20, 30];
+        assert_eq!(compute_prev_idx(&tracks, 0), Some(2));
+    }
+
+    #[test]
+    fn prev_idx_decrements_normally() {
+        let tracks = [10usize, 20, 30];
+        assert_eq!(compute_prev_idx(&tracks, 2), Some(1));
+    }
 }

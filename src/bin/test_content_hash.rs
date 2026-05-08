@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 BangTunes Contributors
+
 use panpipe::audio::{MusicScanner, Track};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -44,7 +47,7 @@ fn main() -> anyhow::Result<()> {
         }
         
         hash_groups.entry(track.content_hash)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(track);
     }
     
@@ -87,14 +90,12 @@ fn main() -> anyhow::Result<()> {
     
     let original = tracks.iter().find(|t| {
         t.file_path.file_name()
-            .and_then(|n| n.to_str())
-            .map_or(false, |n| n == original_name)
+            .and_then(|n| n.to_str()) == Some(original_name)
     });
     
     let duplicate = tracks.iter().find(|t| {
         t.file_path.file_name()
-            .and_then(|n| n.to_str())
-            .map_or(false, |n| n == duplicate_name)
+            .and_then(|n| n.to_str()) == Some(duplicate_name)
     });
     
     match (original, duplicate) {

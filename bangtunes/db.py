@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2024 BangTunes Contributors
+
 """
 Database layer for BangTunes.
 
@@ -33,32 +36,31 @@ def open_db(db_path: Path) -> sqlite3.Connection:
         # Ensure database directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        first_time = not db_path.exists()
         conn = sqlite3.connect(db_path)
 
         # Always set PRAGMAs for every connection
         conn.execute("PRAGMA foreign_keys = ON")  # keep data integrity
         conn.execute("PRAGMA journal_mode = WAL")  # faster for concurrent access
 
-        # Initialize schema on first run
-        if first_time:
-            conn.executescript("""
-            CREATE TABLE IF NOT EXISTS tracks(
-                id INTEGER PRIMARY KEY,
-                youtube_id TEXT UNIQUE NOT NULL,
-                title TEXT NOT NULL,
-                artist TEXT NOT NULL,
-                album TEXT,
-                file_path TEXT,
-                added_on TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);
-            CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);
-            CREATE INDEX IF NOT EXISTS idx_youtube_id ON tracks(youtube_id);
-            CREATE INDEX IF NOT EXISTS idx_file_path ON tracks(file_path);
-            CREATE INDEX IF NOT EXISTS idx_added_on ON tracks(added_on);
-            """)
-            conn.commit()
+        # Always run schema — all statements are IF NOT EXISTS so this is idempotent.
+        # Running on every connection ensures new indexes/tables reach existing installs.
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS tracks(
+            id INTEGER PRIMARY KEY,
+            youtube_id TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            album TEXT,
+            file_path TEXT,
+            added_on TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_artist ON tracks(artist);
+        CREATE INDEX IF NOT EXISTS idx_album ON tracks(album);
+        CREATE INDEX IF NOT EXISTS idx_youtube_id ON tracks(youtube_id);
+        CREATE INDEX IF NOT EXISTS idx_file_path ON tracks(file_path);
+        CREATE INDEX IF NOT EXISTS idx_added_on ON tracks(added_on);
+        """)
+        conn.commit()
 
         return conn
 
