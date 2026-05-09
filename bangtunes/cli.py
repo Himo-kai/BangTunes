@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="""
 Common workflows:
   build -> download -> stats/quickplay    Discover and download new music
-  edit-metadata                          Fix track information
+  list-metadata-issues                   Report tracks with missing metadata
   rescan --fix                          Clean up library inconsistencies
   
 Examples:
@@ -92,7 +92,7 @@ Examples:
     )
 
     # Other commands
-    sub.add_parser("view", help="Show quick library summary")
+    sub.add_parser("view", help="(deprecated) Alias for stats — use 'stats' instead")
     sub.add_parser("list-batches", help="Show available batch CSVs and sizes")
     sub.add_parser(
         "install",
@@ -121,6 +121,11 @@ Examples:
         "--yes",
         action="store_true",
         help="Skip confirmation prompts (non-interactive mode)",
+    )
+    r.add_argument(
+        "--prune-behavior",
+        action="store_true",
+        help="Delete orphan rows from behavior.db for tracks no longer in library.db",
     )
 
     # Integrated Player Commands (always visible; may be unavailable at runtime)

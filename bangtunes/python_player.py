@@ -40,6 +40,7 @@ class PythonMusicPlayer:
         self.player_process: Optional[subprocess.Popen] = None
         self.shuffle = False
         self.repeat = False
+        self._gen = 0  # incremented on every stop(); monitor checks this to avoid double-advance
 
         # Detect available player
         self.player_cmd = self._detect_player()
@@ -112,24 +113,31 @@ class PythonMusicPlayer:
         if index < 0 or index >= len(self.playlist):
             return
 
-        # Stop current playback
+        # Stop current playback — also increments _gen to invalidate any running monitor
         self.stop()
 
         self.playlist_index = index
         self.current_track = self.playlist[index]
         self.is_playing = True
 
-        # Start playback in background
+        # Capture generation for this playback session before starting subprocess
+        my_gen = self._gen
+
         file_path = self.current_track["file_path"]
         cmd = self._get_player_command(file_path)
 
         try:
-            self.player_process = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
+            self.player_process = proc
 
-            # Monitor playback in background thread
-            threading.Thread(target=self._monitor_playback, daemon=True).start()
+            # Pass proc and generation to monitor so it doesn't race on self.player_process
+            threading.Thread(
+                target=self._monitor_playback,
+                args=(proc, my_gen),
+                daemon=True,
+            ).start()
 
         except Exception as e:
             self.is_playing = False
@@ -138,22 +146,28 @@ class PythonMusicPlayer:
             else:
                 print(f"Playback failed: {e}")
 
-    def _monitor_playback(self) -> None:
-        """Monitor playback and auto-advance when track ends."""
-        if not self.player_process:
-            return
+    def _monitor_playback(self, proc: subprocess.Popen, my_gen: int) -> None:
+        """Monitor playback and auto-advance when track ends naturally.
 
-        self.player_process.wait()
+        Uses a generation counter: if _gen has changed since this monitor was
+        started, the track was stopped or superseded — do not auto-advance.
+        """
+        proc.wait()
         self.is_playing = False
 
-        # Auto-advance to next track
+        if self._gen != my_gen:
+            # stop() was called (quit, next, prev) — do not auto-advance
+            return
+
+        # Natural track end — advance to next
         if self.repeat:
             self.play_track(self.playlist_index)
         elif self.playlist_index < len(self.playlist) - 1:
             self.next_track()
 
     def stop(self) -> None:
-        """Stop current playback."""
+        """Stop current playback and invalidate any running monitor thread."""
+        self._gen += 1  # causes any running _monitor_playback to silently exit
         if self.player_process:
             try:
                 self.player_process.terminate()

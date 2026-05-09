@@ -376,12 +376,14 @@ python bang_tunes.py stats
 python bang_tunes.py quickplay
 ```
 
-**Interactive Metadata Editor:**
+**Metadata Issues Report:**
 
 ```bash
-# Search, browse, and edit track information
-python bang_tunes.py edit-metadata
+# List tracks with missing or 'Unknown' metadata
+python bang_tunes.py list-metadata-issues
 ```
+
+The full interactive metadata editor lives in the PanPipe player (Metadata Editor tab). Use `python bang_tunes.py play` to access it.
 
 **Library Maintenance:**
 
@@ -501,29 +503,13 @@ python bang_tunes.py view
 
 Shows top artists by track count in a styled table.
 
-### Metadata Editor
-
-Interactive metadata editor for fixing track information:
+### Metadata Issues
 
 ```bash
-python bang_tunes.py edit-metadata
+python bang_tunes.py list-metadata-issues
 ```
 
-Features:
-
-- **Search and Browse**: List all tracks or search by artist, title, or album
-- **Interactive Editing**: Edit track metadata with confirmation prompts
-- **File Tag Updates**: Updates both database and audio file tags
-- **Safe Operations**: Shows changes before applying, with confirmation
-- **Keyboard Navigation**: Full keyboard-driven interface
-
-The metadata editor provides:
-
-1. List all tracks in your library
-2. Search tracks by any field
-3. Edit individual track metadata (title, artist, album)
-4. Preview changes before applying
-5. Update both database and file tags simultaneously
+Lists tracks in the library that have missing or "Unknown" metadata. For interactive editing of individual tracks, use the Metadata Editor tab inside `python bang_tunes.py play`.
 
 ### Player Commands
 

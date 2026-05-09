@@ -178,24 +178,50 @@ def run_ytdlp_audio(
     ]
 
     try:
+        # Record time just before download so we can filter out pre-existing files
+        download_start = time.time()
+
         # Fire off yt-dlp but don't let it hang forever (5 min max)
         subprocess.run(cmd, check=True, timeout=300, capture_output=True, text=True)
 
-        # Try to find the file it just downloaded
+        # Try to find the file it just downloaded — only consider files created
+        # during this call (mtime >= download_start) to avoid picking up files
+        # from previous tracks that are still in the shared temp directory.
         vid_match = url.split("v=")[-1].split("&")[0]  # grab the video ID from the URL
-        files = list(out_dir.glob(f"{vid_match}.*"))
+        files = [
+            f for f in out_dir.glob(f"{vid_match}.*")
+            if f.stat().st_mtime >= download_start
+        ]
 
         if not files:
-            # Hmm, can't find it by video ID. Maybe yt-dlp named it differently?
-            all_files = list(out_dir.glob("*.*"))
-            if all_files:
-                # Just grab whatever's newest - probably what we just downloaded
-                path = max(all_files, key=lambda p: p.stat().st_mtime)
+            # No file matched by video ID — try any file created during this download
+            all_new = [
+                f for f in out_dir.glob("*.*")
+                if f.stat().st_mtime >= download_start
+            ]
+            if all_new:
+                path = max(all_new, key=lambda p: p.stat().st_mtime)
+                # Warn if the format doesn't match what was requested
+                actual_ext = path.suffix.lstrip(".")
+                if actual_ext != audio_format and console:
+                    console.print(
+                        f"[yellow]⚠️  Format mismatch: requested {audio_format}, "
+                        f"got {actual_ext} for {url}[/yellow]"
+                    )
                 return path
             return None
 
-        # Found it! Grab the newest one in case there are duplicates
+        # Found it by video ID — grab the newest in case of duplicates
         path = max(files, key=lambda p: p.stat().st_mtime)
+
+        # Warn if the format doesn't match (e.g. ffmpeg not installed, yt-dlp fell back)
+        actual_ext = path.suffix.lstrip(".")
+        if actual_ext != audio_format and console:
+            console.print(
+                f"[yellow]⚠️  Format mismatch: requested {audio_format}, "
+                f"got {actual_ext} for {url}[/yellow]"
+            )
+
         return path
 
     except subprocess.TimeoutExpired:
@@ -495,10 +521,26 @@ def _process_successful_download(
 
     # Move file to final location
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp.rename(final_path)
+    try:
+        tmp.rename(final_path)
+    except OSError:
+        # Cross-device or permission error — try copy+delete as fallback
+        import shutil as _shutil
+        _shutil.copy2(tmp, final_path)
+        tmp.unlink(missing_ok=True)
+
+    # Verify the file actually landed on disk before writing the DB entry
+    if not final_path.exists():
+        if console:
+            console.print(
+                f"[red]✗ File not found after move, skipping DB write: {final_path}[/red]"
+            )
+        else:
+            print(f"✗ File not found after move, skipping DB write: {final_path}")
+        return
 
     # Embed metadata tags
     embed_easy_tags(final_path, title, artist, album, year)
 
-    # Add to database
+    # Add to database — only reached when the file exists on disk
     db_add_track_func(db_conn, yid, title, artist, album or "", str(final_path))

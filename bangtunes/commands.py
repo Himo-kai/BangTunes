@@ -238,63 +238,14 @@ def cmd_download(args: Any, root: Path, config: Dict[str, Any]) -> int:
 
 
 def cmd_view(args: Any, root: Path, config: Dict[str, Any]) -> int:
-    """Handle view command."""
-    try:
-        # Get database connection
-        db_path = root / "library.db"
-        db_conn = get_db(db_path)
-
-        # Get all tracks for statistics
-        tracks = db_get_all_tracks(db_conn)
-
-        if not tracks:
-            if console:
-                console.print("[yellow]No tracks found in library[/yellow]")
-                console.print(
-                    "[dim]Run 'python bang_tunes.py build' to discover music[/dim]"
-                )
-            else:
-                print("No tracks found in library")
-                print("Run 'python bang_tunes.py build' to discover music")
-            return 0
-
-        # Count tracks by artist
-        artist_counts: Dict[str, int] = {}
-        for track in tracks:
-            artist = track.get("artist", "Unknown Artist")
-            artist_counts[artist] = artist_counts.get(artist, 0) + 1
-
-        # Sort by track count (descending)
-        sorted_artists = sorted(artist_counts.items(), key=lambda x: x[1], reverse=True)
-
-        if console:
-            console.print("\n[bold]Bang Tunes — Top Artists[/bold]")
-
-            # Create table
-            from rich.table import Table
-
-            table = Table()
-            table.add_column("Artist", style="cyan")
-            table.add_column("# Tracks", justify="right", style="magenta")
-
-            for artist, count in sorted_artists:
-                table.add_row(artist, str(count))
-
-            console.print(table)
-        else:
-            print("\nBang Tunes — Top Artists")
-            print("-" * 50)
-            for artist, count in sorted_artists:
-                print(f"{artist:<40} {count:>8}")
-
-        return 0
-
-    except Exception as e:
-        if console:
-            console.print(f"[red]Error viewing library: {e}[/red]")
-        else:
-            print(f"Error viewing library: {e}")
-        return 1
+    """Handle view command (deprecated — redirects to stats)."""
+    if console:
+        console.print(
+            "[yellow]⚠️  'view' is deprecated. Use [cyan]stats[/cyan] instead.[/yellow]"
+        )
+    else:
+        print("⚠️  'view' is deprecated. Use 'stats' instead.")
+    return cmd_stats(args, root, config)
 
 
 def cmd_list_batches(args: Any, root: Path, config: Dict[str, Any]) -> int:
