@@ -4,6 +4,7 @@
 // PanPipe Library - Core modules for terminal music player
 // Modular design makes it easy to swap out components
 
+pub mod app;       // interactive TUI application
 pub mod audio;     // handles playback, scanning, metadata
 pub mod behavior;  // tracks what you like/skip
 pub mod config;    // settings and preferences
