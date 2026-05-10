@@ -124,6 +124,7 @@ seed.csv → build → batches/mix_NNN.csv → download → downloads/ + library
 - **Rust feature flags**: `tui`, `audio`, `behavior` are the three main features. `termux` is a headless preset (no rodio/ALSA). Check Cargo.toml before adding dependencies.
 - **Track UUIDs are deterministic** (UUIDv5) so library rescans don't break behavior history.
 - **Config search order**: `~/.config/bangtunes.toml` first, then `./bangtunes.toml`. `_deep_merge` lets local overrides win.
+- **Cross-language contracts live in `SCHEMA.md`** — when making any change that crosses the Python/Rust boundary (database schema, file paths, UUID formula, config keys, behavior tags), update `SCHEMA.md` in the same commit.
 
 ## Audio Format Support (rodio / Symphonia)
 

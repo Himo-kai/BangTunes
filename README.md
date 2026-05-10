@@ -441,6 +441,8 @@ The SQLite database (`library.db`) stores:
 - `file_path`: Full path to audio file
 - `added_on`: Timestamp when added
 
+For the full cross-language contract between the Python and Rust components — including complete database schemas, UUID formula, config keys, file path conventions, and behavior tag definitions — see [SCHEMA.md](SCHEMA.md).
+
 ## Testing
 
 BangTunes includes a small pytest suite to guard the seed → batch → download pipeline.
