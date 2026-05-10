@@ -81,7 +81,15 @@ impl TrackBehavior {
     }
     
     fn update_tags(&mut self) {
+        // "favorite" is set exclusively by explicit user action and must survive session updates.
+        // All other tags are auto-derived from listening data and safe to recompute.
+        let is_favorite = self.tags.contains(&"favorite".to_string());
+
         self.tags.clear();
+
+        if is_favorite {
+            self.tags.push("favorite".to_string());
+        }
 
         // Tag based on completion rate.
         // NOTE: "high_completion" is auto-detected from listening data.
@@ -179,6 +187,20 @@ mod tests {
         assert!(
             !behavior.tags.contains(&"favorite".to_string()),
             "'favorite' must not be auto-assigned — it is reserved for explicit user action"
+        );
+    }
+
+    #[test]
+    fn favorite_tag_survives_session_update() {
+        let mut behavior = TrackBehavior::new(Uuid::new_v4());
+        // User explicitly marks favorite
+        behavior.tags.push("favorite".to_string());
+        // Track gets played (triggers update_tags internally)
+        behavior.update_from_session(&make_session(50.0, false));
+        assert!(
+            behavior.tags.contains(&"favorite".to_string()),
+            "favorite tag must survive update_from_session, got: {:?}",
+            behavior.tags
         );
     }
 

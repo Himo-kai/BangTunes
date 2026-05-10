@@ -79,6 +79,12 @@ impl TerminalManager {
         Ok(())
     }
 
+    /// Force a full terminal redraw (clears screen; next draw() rebuilds everything).
+    pub fn clear(&mut self) -> Result<()> {
+        self.terminal.clear()?;
+        Ok(())
+    }
+
     pub fn size(&self) -> Result<ratatui::layout::Rect> {
         let size = self.terminal.size()?;
         Ok(ratatui::layout::Rect::new(0, 0, size.width, size.height))

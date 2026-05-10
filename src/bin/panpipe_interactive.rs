@@ -160,7 +160,8 @@ async fn main() -> Result<()> {
     
     // Process scan progress with live updates
     let mut all_tracks = Vec::new();
-    
+    let mut scan_error_count: usize = 0;
+
     while let Some(progress) = progress_rx.recv().await {
         match progress {
             ScanProgress::Started { total_directories } => {
@@ -171,7 +172,7 @@ async fn main() -> Result<()> {
             }
             ScanProgress::TrackFound { track, progress, .. } => {
                 all_tracks.push(*track);
-                
+
                 // Update progress every 50 tracks for smooth feedback
                 if progress % 50 == 0 {
                     println!("   📀 Found {} tracks so far...", progress);
@@ -185,7 +186,9 @@ async fn main() -> Result<()> {
                 break;
             }
             ScanProgress::Error { path, error } => {
-                eprintln!("   ⚠️  Error scanning {:?}: {}", path, error);
+                // Log to file (stderr goes to /dev/null in non-dev mode)
+                info!("⚠️  Scan error {:?}: {}", path, error);
+                scan_error_count += 1;
             }
         }
     }
@@ -217,7 +220,8 @@ async fn main() -> Result<()> {
     
     // Initialize the interactive app
     let mut app = InteractiveApp::new(config, all_tracks).await?;
-    
+    app.scan_skipped_count = scan_error_count;
+
     // If a specific track was requested, try to play it
     if let Some(track_path) = args.play_track {
         app.play_specific_track(&track_path).await?;
@@ -263,6 +267,7 @@ struct InteractiveApp {
     queue_replace_playlist_id: Option<String>, // Playlist to load if confirmed
     favorites: std::collections::HashSet<uuid::Uuid>, // Cached favorite track IDs for fast lookup
     failed_tracks: std::collections::HashSet<uuid::Uuid>, // Tracks that failed to decode; skipped in playback
+    scan_skipped_count: usize, // Tracks that failed to scan (file errors); shown in library title
     
     // Time tracking
     current_position: Duration,
@@ -416,6 +421,7 @@ impl InteractiveApp {
             queue_replace_playlist_id: None,
             favorites,
             failed_tracks: std::collections::HashSet::new(),
+            scan_skipped_count: 0,
             current_position: Duration::from_secs(0),
             total_duration: None,
             last_position_update: Instant::now(),
@@ -485,12 +491,21 @@ impl InteractiveApp {
                     if key.kind == KeyEventKind::Press {
                             let app_event = if self.queue_replace_confirmation {
                                 // Queue replacement confirmation takes priority
-                                match key.code {
-                                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                use crossterm::event::KeyModifiers;
+                                match (key.code, key.modifiers) {
+                                    (KeyCode::Char('y'), _) | (KeyCode::Char('Y'), _) => {
                                         Some(InteractiveEvent::ConfirmQueueReplace)
                                     }
-                                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                    (KeyCode::Char('n'), _) | (KeyCode::Char('N'), _) | (KeyCode::Esc, _) => {
                                         Some(InteractiveEvent::CancelQueueReplace)
+                                    }
+                                    // Ctrl+C / q always quit even during confirmation
+                                    (KeyCode::Char('c'), KeyModifiers::CONTROL) | (KeyCode::Char('q'), KeyModifiers::NONE) => {
+                                        Some(InteractiveEvent::Quit)
+                                    }
+                                    // Ctrl+L force redraw works everywhere
+                                    (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+                                        Some(InteractiveEvent::ForceRedraw)
                                     }
                                     _ => None, // Block other keys during confirmation
                                 }
@@ -536,68 +551,71 @@ impl InteractiveApp {
     
     fn key_to_search_event(key: KeyEvent) -> Option<InteractiveEvent> {
         use crossterm::event::KeyModifiers;
-        
+
         match (key.code, key.modifiers) {
             // Esc clears the query and restores the full library
             (KeyCode::Esc, _) => Some(InteractiveEvent::ExitSearch),
             // Enter locks in filtered results and exits input mode (results remain visible)
             (KeyCode::Enter, _) => Some(InteractiveEvent::ConfirmSearch),
-            
+
             // Search input handling
             (KeyCode::Backspace, _) => Some(InteractiveEvent::SearchBackspace),
             (KeyCode::Char(c), KeyModifiers::NONE) if !c.is_control() => Some(InteractiveEvent::SearchInput(c)),
-            
+
             // Allow navigation in search results
             (KeyCode::Up, _) => Some(InteractiveEvent::Up),
             (KeyCode::Down, _) => Some(InteractiveEvent::Down),
-            
-            // Global quit still works
+
+            // Global quit / redraw work everywhere
             (KeyCode::Char('q'), KeyModifiers::NONE) => Some(InteractiveEvent::Quit),
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(InteractiveEvent::Quit),
-            
+            (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some(InteractiveEvent::ForceRedraw),
+
             _ => None,
         }
     }
     
     fn key_to_playlist_event(key: KeyEvent) -> Option<InteractiveEvent> {
         use crossterm::event::KeyModifiers;
-        
+
         match (key.code, key.modifiers) {
             // Confirm playlist creation
             (KeyCode::Enter, _) => Some(InteractiveEvent::ConfirmPlaylistCreation),
             // Cancel playlist creation
             (KeyCode::Esc, _) => Some(InteractiveEvent::CancelPlaylistCreation),
-            
+
             // Playlist name input handling
             (KeyCode::Backspace, _) => Some(InteractiveEvent::PlaylistBackspace),
             (KeyCode::Char(c), KeyModifiers::NONE) if !c.is_control() => Some(InteractiveEvent::PlaylistInput(c)),
-            
-            // Global quit still works
+
+            // Global quit / redraw work everywhere
             (KeyCode::Char('q'), KeyModifiers::NONE) => Some(InteractiveEvent::Quit),
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(InteractiveEvent::Quit),
-            
+            (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some(InteractiveEvent::ForceRedraw),
+
             _ => None,
         }
     }
     
     fn key_to_playlist_selector_event(key: KeyEvent) -> Option<InteractiveEvent> {
         use crossterm::event::KeyModifiers;
-        
+
         match (key.code, key.modifiers) {
             // Navigation in playlist selector
             (KeyCode::Up, _) => Some(InteractiveEvent::Up),
             (KeyCode::Down, _) => Some(InteractiveEvent::Down),
-            
+
             // Select playlist or create new one
             (KeyCode::Enter, _) => Some(InteractiveEvent::SelectPlaylistFromSelector),
-            
+
             // Cancel playlist selection
             (KeyCode::Esc, _) => Some(InteractiveEvent::CancelPlaylistSelector),
-            
-            // Global quit still works
+
+            // Global quit / redraw work everywhere
             (KeyCode::Char('q'), KeyModifiers::NONE) => Some(InteractiveEvent::Quit),
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(InteractiveEvent::Quit),
-            
+            (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some(InteractiveEvent::ForceRedraw),
+
             _ => None,
         }
     }
@@ -610,6 +628,7 @@ impl InteractiveApp {
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => Some(InteractiveEvent::SaveMetadata),
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => Some(InteractiveEvent::ResetToOriginal),
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(InteractiveEvent::Quit), // Ctrl+C
+            (KeyCode::Char('l'), KeyModifiers::CONTROL) => Some(InteractiveEvent::ForceRedraw), // Ctrl+L
             
             // Regular key mappings
             (KeyCode::Char('q'), KeyModifiers::NONE) => Some(InteractiveEvent::Quit),
@@ -832,9 +851,12 @@ impl InteractiveApp {
             
             // Favorites work when not editing
             (InteractiveEvent::ToggleFavorite, _, EditMode::None) => true,
-            
+
+            // Recovery — works everywhere
+            (InteractiveEvent::ForceRedraw, _, _) => true,
+
             // Visualizer event filtering removed
-            
+
             // Block other events when editing or in wrong context
             _ => false,
         };
@@ -998,19 +1020,23 @@ impl InteractiveApp {
             }
             InteractiveEvent::QueuePlayNext => {
                 if let Some(selected) = self.list_state.selected() {
-                    let track_idx = self.filtered_tracks[selected];
-                    self.queue.push_front(track_idx);
-                    let title = self.tracks[track_idx].display_title();
-                    self.set_status(&format!("⏭ Playing next: {}", title));
+                    if selected < self.filtered_tracks.len() {
+                        let track_idx = self.filtered_tracks[selected];
+                        self.queue.push_front(track_idx);
+                        let title = self.tracks[track_idx].display_title();
+                        self.set_status(&format!("⏭ Playing next: {}", title));
+                    }
                 }
             }
             InteractiveEvent::QueueAddToEnd => {
                 if let Some(selected) = self.list_state.selected() {
-                    let track_idx = self.filtered_tracks[selected];
-                    self.queue.push_back(track_idx);
-                    let title = self.tracks[track_idx].display_title();
-                    self.set_status(&format!("➕ Added to queue: {} ({} in queue)", 
-                        title, self.queue.len()));
+                    if selected < self.filtered_tracks.len() {
+                        let track_idx = self.filtered_tracks[selected];
+                        self.queue.push_back(track_idx);
+                        let title = self.tracks[track_idx].display_title();
+                        self.set_status(&format!("➕ Added to queue: {} ({} in queue)",
+                            title, self.queue.len()));
+                    }
                 }
             }
             InteractiveEvent::QueueClear => {
@@ -1113,6 +1139,14 @@ impl InteractiveApp {
                 self.queue_replace_confirmation = false;
                 self.queue_replace_playlist_id = None;
                 self.set_status("❌ Queue replacement cancelled");
+            }
+            InteractiveEvent::ForceRedraw => {
+                // Clear the terminal and let the next render cycle rebuild everything.
+                // Useful for recovering from display corruption (Bug B queue glitch, etc.).
+                if let Err(e) = self.terminal.clear() {
+                    debug!("⚠️ Force redraw clear failed: {}", e);
+                }
+                self.set_status("🔄 Display refreshed");
             }
             InteractiveEvent::Tick => {
                 // Handle periodic updates
@@ -1693,6 +1727,13 @@ impl InteractiveApp {
         
         // Priority 1: Queue takes precedence
         if let Some(queued_idx) = self.queue.pop_front() {
+            // Clamp the queue overlay selection to the new (shorter) queue length
+            // so the cursor doesn't point past the end after each consumption.
+            if self.queue.is_empty() {
+                self.queue_list_state.select(None);
+            } else if let Some(sel) = self.queue_list_state.selected() {
+                self.queue_list_state.select(Some(sel.min(self.queue.len() - 1)));
+            }
             self.play_track(queued_idx).await?;
             return Ok(());
         }
@@ -1940,38 +1981,39 @@ impl InteractiveApp {
                 let mut match_field = "none";
                 
                 // Try matching against title
+                // fuzzy_match(choice, pattern): choice = text to search IN, pattern = query
                 if let Some(title) = &track.metadata.title {
-                    if let Some(score) = self.fuzzy_matcher.fuzzy_match(&self.search_query, title) {
+                    if let Some(score) = self.fuzzy_matcher.fuzzy_match(title, &self.search_query) {
                         if score > best_score {
                             best_score = score;
                             match_field = "title";
                         }
                     }
                 }
-                
-                // Try matching against display title
+
+                // Try matching against display title (filename fallback when metadata is missing)
                 let display_title = track.display_title();
-                if let Some(score) = self.fuzzy_matcher.fuzzy_match(&self.search_query, &display_title) {
+                if let Some(score) = self.fuzzy_matcher.fuzzy_match(&display_title, &self.search_query) {
                     if score > best_score {
                         best_score = score;
                         match_field = "display_title";
                     }
                 }
-                
+
                 // Try matching against artist
                 if let Some(artist) = &track.metadata.artist {
-                    if let Some(score) = self.fuzzy_matcher.fuzzy_match(&self.search_query, artist) {
+                    if let Some(score) = self.fuzzy_matcher.fuzzy_match(artist, &self.search_query) {
                         if score > best_score {
                             best_score = score;
                             match_field = "artist";
                         }
                     }
                 }
-                
+
                 // Try matching against filename
                 if let Some(filename) = track.file_path.file_name() {
                     let filename_str = filename.to_string_lossy();
-                    if let Some(score) = self.fuzzy_matcher.fuzzy_match(&self.search_query, &filename_str) {
+                    if let Some(score) = self.fuzzy_matcher.fuzzy_match(&filename_str, &self.search_query) {
                         if score > best_score {
                             best_score = score;
                             match_field = "filename";
@@ -2343,6 +2385,7 @@ impl InteractiveApp {
         let queue = &self.queue;
         let tracks = &self.tracks;
         let queue_list_state = &mut self.queue_list_state;
+        let scan_skipped_count = self.scan_skipped_count;
         
         // Attempt render with error recovery
         match self.terminal.draw(|f| {
@@ -2376,7 +2419,7 @@ impl InteractiveApp {
             // Render content based on current tab
             match &self.current_tab {
                 AppTab::Library => {
-                    Self::render_track_list(f, chunks[1], &self.tracks, &self.filtered_tracks, current_track_index, is_playing, &mut self.list_state, &self.favorites);
+                    Self::render_track_list(f, chunks[1], &self.tracks, &self.filtered_tracks, current_track_index, is_playing, &mut self.list_state, &self.favorites, scan_skipped_count);
                 }
                 AppTab::Playlists => {
                     Self::render_playlists_tree_view(f, chunks[1], &self.playlist_manager, &mut self.playlist_list_state, &self.expanded_playlists, &self.tracks, &self.playlist_track_states, current_track_index, is_playing);
@@ -2611,6 +2654,7 @@ impl InteractiveApp {
         is_playing: bool,
         list_state: &mut ListState,
         favorites: &std::collections::HashSet<uuid::Uuid>,
+        scan_skipped_count: usize,
     ) {
         let items: Vec<ListItem> = filtered_tracks
             .iter()
@@ -2647,15 +2691,21 @@ impl InteractiveApp {
             })
             .collect();
         
+        let library_title = if scan_skipped_count > 0 {
+            format!("Library ({} tracks | ⚠️ {} failed to load — run --dev for details)", filtered_tracks.len(), scan_skipped_count)
+        } else {
+            format!("Library ({} tracks)", filtered_tracks.len())
+        };
+
         let list = List::new(items)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!("Library ({} tracks)", filtered_tracks.len()))
+                    .title(library_title)
             )
             .highlight_style(Style::default().bg(Color::DarkGray))
             .highlight_symbol("→ ");
-        
+
         f.render_stateful_widget(list, area, list_state);
     }
     
@@ -3435,6 +3485,8 @@ enum InteractiveEvent {
     CancelQueueReplace,   // 'N' or Esc - Cancel queue replacement
     // Favorites
     ToggleFavorite,   // 'f' - Toggle favorite status (⭐ boosts shuffle weight)
+    // Recovery
+    ForceRedraw,      // Ctrl+L - Force full terminal redraw to clear display glitches
 }
 
 /// Redirect stderr to /dev/null to suppress ALSA error messages that interfere with TUI
@@ -3490,6 +3542,8 @@ fn compute_prev_idx(items: &[usize], selected: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::compute_prev_idx;
+    use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
+    use std::collections::VecDeque;
 
     #[test]
     fn prev_idx_returns_none_when_filtered_tracks_empty() {
@@ -3506,5 +3560,80 @@ mod tests {
     fn prev_idx_decrements_normally() {
         let tracks = [10usize, 20, 30];
         assert_eq!(compute_prev_idx(&tracks, 2), Some(1));
+    }
+
+    // Bug C: fuzzy_match argument order — choice first, pattern second.
+    // Searching "parasite eve" against a longer title must match via the title-first form.
+    #[test]
+    fn fuzzy_search_correct_arg_order_finds_track_by_substring() {
+        let matcher = SkimMatcherV2::default();
+        let title = "Bring Me The Horizon - Parasite Eve";
+        let query = "parasite eve";
+
+        // Correct: title (choice) first, query (pattern) second
+        assert!(
+            matcher.fuzzy_match(title, query).is_some(),
+            "fuzzy_match(title, query) must find a match"
+        );
+        // Wrong (reversed): query as choice, long title as pattern — should fail
+        assert!(
+            matcher.fuzzy_match(query, title).is_none(),
+            "fuzzy_match(query, title) should NOT match when query is shorter than title pattern"
+        );
+    }
+
+    #[test]
+    fn fuzzy_search_short_query_against_exact_title_matches() {
+        let matcher = SkimMatcherV2::default();
+        let title = "Parasite Eve";
+        let query = "parasite eve";
+        assert!(
+            matcher.fuzzy_match(title, query).is_some(),
+            "exact case-insensitive match must always succeed"
+        );
+    }
+
+    // Bug B: queue with duplicate track indices should not corrupt the selection state.
+    // Simulates the "queue same track 5x" scenario at the data structure level.
+    #[test]
+    fn queue_duplicate_tracks_pop_front_bounds_clamp() {
+        let mut queue: VecDeque<usize> = VecDeque::new();
+        // Add track index 42 five times
+        for _ in 0..5 {
+            queue.push_back(42);
+        }
+
+        let mut selection: Option<usize> = Some(4); // Cursor at last item
+
+        // Simulate 3 pops (as next_track() would do)
+        for _ in 0..3 {
+            queue.pop_front();
+            // Clamp logic from the fix
+            if queue.is_empty() {
+                selection = None;
+            } else if let Some(sel) = selection {
+                selection = Some(sel.min(queue.len() - 1));
+            }
+        }
+
+        assert_eq!(queue.len(), 2);
+        assert_eq!(selection, Some(1), "selection must be clamped to new queue length - 1");
+    }
+
+    #[test]
+    fn queue_empties_cleanly_selection_becomes_none() {
+        let mut queue: VecDeque<usize> = VecDeque::new();
+        queue.push_back(7);
+        let mut selection: Option<usize> = Some(0);
+
+        queue.pop_front();
+        if queue.is_empty() {
+            selection = None;
+        } else if let Some(sel) = selection {
+            selection = Some(sel.min(queue.len() - 1));
+        }
+
+        assert!(queue.is_empty());
+        assert_eq!(selection, None, "selection must be None when queue is empty");
     }
 }
