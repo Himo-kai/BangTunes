@@ -166,6 +166,22 @@ from the absolute file path using UUIDv5 with the OID namespace.
 `library.db` is an auto-increment INTEGER, not a UUID. The UUID is a Rust-only concept
 used only in behavior.db.
 
+### Known Limitation: Path-Based UUIDs
+
+Track UUIDs are currently derived from absolute file paths. This means behavior records
+(favorites, play counts, weights) are tied to file location. Moving or renaming a track
+invalidates its behavior history.
+
+A future migration is planned to switch to youtube_id-based UUIDs:
+`UUIDv5(NAMESPACE_URL, youtube_id)`. This requires:
+- Adding a `uuid` column to `library.db`
+- Schema version bump on both `library.db` and `behavior.db`
+- One-time migration of existing behavior records
+- Coordinated change in Python (`db.py`) and Rust (`track.rs`, `scanner.rs`)
+
+Until that migration: do not move or rename downloaded files. The stable `downloads/`
+directory tree assumes paths are immutable.
+
 ### youtube_id
 
 - **Format:** YouTube video ID string, typically 11 ASCII characters (base64url alphabet: `[A-Za-z0-9_-]`)
